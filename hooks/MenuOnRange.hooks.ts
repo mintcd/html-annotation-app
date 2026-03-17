@@ -131,8 +131,11 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
     // Update highlight IDs when server responds with real ID
     promise.then(serverId => {
       if (serverId !== tempId) {
-        // Update all spans with temp ID to use server ID
-        const spans = container.querySelectorAll<HTMLSpanElement>(
+        // Update all spans with temp ID to use server ID.
+        // Use iframeDoc (the iframe's content document) rather than container
+        // (the <iframe> element), because querySelectorAll on an <iframe> element
+        // does not search inside its content document.
+        const spans = iframeDoc.querySelectorAll<HTMLSpanElement>(
           `span.highlighted-text[data-highlight-id="${tempId}"]`
         );
         spans.forEach(span => {
