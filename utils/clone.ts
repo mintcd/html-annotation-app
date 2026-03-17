@@ -116,27 +116,29 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   const clonedBase = (baseTagHref ? new URL(baseTagHref, pageUrl) : new URL('.', pageUrl)).href;
 
   // ── Origin registration ───────────────────────────────────────────────────
-  // Collect every unique origin referenced by resources in this page, register
-  // them in the websites table so the _proxy route can resolve slug → origin.
-  const resourceOrigins = new Set<string>([pageUrl.origin]);
+  // Register only the main page origin in the websites table so it can be
+  // annotated. Resource-only origins (CDNs, fonts, analytics, etc.) receive
+  // deterministic slugs via originToSlug() without a DB entry, preventing
+  // unannotated third-party hosts from polluting the websites table.
+  const slugMap = new Map<string, string>();
+
+  try {
+    const website = await getOrCreateWebsite(pageUrl.origin);
+    slugMap.set(pageUrl.origin, website.id);
+  } catch {
+    slugMap.set(pageUrl.origin, originToSlug(pageUrl.origin));
+  }
+
   $('[src],[href]').each((_, el) => {
     const raw = ($(el).attr('src') || $(el).attr('href') || '').trim();
     if (!raw || isSkippable(raw)) return;
-    try { resourceOrigins.add(new URL(absoluteUrl(clonedBase, raw)).origin); } catch { /* ignore */ }
-  });
-
-  const slugMap = new Map<string, string>();
-  await Promise.all(
-    [...resourceOrigins].map(async (origin) => {
-      try {
-        const website = await getOrCreateWebsite(origin);
-        slugMap.set(origin, website.id);
-      } catch {
-        // Fallback: deterministic slug (correct unless there was a DB collision)
+    try {
+      const origin = new URL(absoluteUrl(clonedBase, raw)).origin;
+      if (!slugMap.has(origin)) {
         slugMap.set(origin, originToSlug(origin));
       }
-    })
-  );
+    } catch { /* ignore */ }
+  });
 
   // Slug-aware proxy URL builder — used everywhere below.
   // Assets go to /_proxy/{slug}{pathname} so they never collide with the
