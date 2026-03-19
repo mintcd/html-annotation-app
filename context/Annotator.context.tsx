@@ -80,12 +80,14 @@ export function AnnotationContext({
     // Return temp ID immediately and a promise for the final ID
     const promise = (async () => {
       try {
-        // Only update the page if it already exists. Dashboard is responsible for creating pages.
-        const existingPage = await getPage(pageUrl);
-        if (existingPage) {
-          await updatePage({ url: pageUrl, title: title || "Annotated Page", numberOfScripts: 0 });
+        // Only update the page title if it already exists and we have a real title.
+        // Dashboard is responsible for creating pages.
+        if (title) {
+          const existingPage = await getPage(pageUrl);
+          if (existingPage) {
+            await updatePage({ url: pageUrl, title });
+          }
         }
-
 
         // Create annotation and get server-generated ID, including color
         const serverAnnotation = await createAnnotation(pageUrl, text, html, color);
