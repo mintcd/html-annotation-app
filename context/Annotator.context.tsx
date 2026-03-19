@@ -84,7 +84,7 @@ export function AnnotationContext({
         // Dashboard is responsible for creating pages.
         if (title) {
           const existingPage = await getPage(pageUrl);
-          if (existingPage) {
+          if (existingPage && existingPage.title !== title) {
             await updatePage({ url: pageUrl, title });
           }
         }
