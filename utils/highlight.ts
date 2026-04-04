@@ -103,5 +103,22 @@ export function toTopWindowRect(rect: DOMRect, doc: Document = document): DOMRec
     }
   }
 
+  // Adjust for the top-level visual viewport offset. When the user pinches
+  // to zoom or pans on mobile, the visual viewport can be offset relative
+  // to the layout viewport. Fixed-position elements are placed relative
+  // to the visual viewport, so subtract the offset to convert the
+  // layout-based coordinates into visual-viewport coordinates.
+  try {
+    const topVV = window.visualViewport;
+    if (topVV) {
+      left -= topVV.offsetLeft;
+      right -= topVV.offsetLeft;
+      top -= topVV.offsetTop;
+      bottom -= topVV.offsetTop;
+    }
+  } catch (err) {
+    // ignore - if access is denied, return best-effort coords
+  }
+
   return { left, top, right, bottom, width: right - left, height: bottom - top } as DOMRect;
 }

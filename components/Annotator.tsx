@@ -11,7 +11,7 @@ import PasteHTML from './PasteHTML';
 import annotationStyles from "../styles/Annotator.styles";
 import Loader from './Loader';
 import { getPage, updatePage } from '@/utils/api.client';
-import { matchedRange, rangeToHtml, highlightRange, findBestContentNode } from '@/utils/dom';
+import { findBestContentNode } from '@/utils/dom';
 import { awaitDomSettled } from '@/utils/dom';
 import { highlightAnnotations } from '@/utils/annotations';
 
@@ -69,13 +69,13 @@ export default function Annotator({ annotations, title, remoteScriptCount, pageU
     trackScriptExecution(iframe, remoteScriptCount);
     await awaitDomSettled(iframe);
     // Ensure highlight styles exist inside the iframe document (iframe has its own DOM)
-    try {
-      const id = 'annotation-highlight-styles';
-      const doc = iframe.contentDocument;
-      if (doc && !doc.getElementById(id)) {
-        const styleEl = doc.createElement('style');
-        styleEl.id = id;
-        styleEl.textContent = `
+
+    const id = 'annotation-highlight-styles';
+    const doc = iframe.contentDocument;
+    if (doc && !doc.getElementById(id)) {
+      const styleEl = doc.createElement('style');
+      styleEl.id = id;
+      styleEl.textContent = `
           .highlighted-text {
             cursor: pointer;
             padding-left: 1px;
@@ -83,11 +83,8 @@ export default function Annotator({ annotations, title, remoteScriptCount, pageU
             border-radius: 3px;
           }
         `;
-        doc.head?.appendChild(styleEl);
-      }
-    } catch (e) {
-      // If iframe is cross-origin or injection fails, just continue
-      console.warn('Could not inject highlight styles into iframe', e);
+      doc.head?.appendChild(styleEl);
+
     }
 
     highlightAnnotations(annotations, iframe.contentDocument?.body as HTMLElement);
