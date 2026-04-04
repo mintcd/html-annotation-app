@@ -29,7 +29,7 @@ export async function generateMetadata({
 
   const website = await getWebsiteBySlug(site);
   if (!website) return { title: "Not Found 2" };
-  const url = normalizeUrl(appPathToPageUrl(website.origin, path, search));
+  const url = appPathToPageUrl(website.origin, path, search);
   const { title } = await getPageFromServer(url);
   const fallback = new URL(url).hostname.replace(/^www\./, '');
   return { title: title ?? `Annotating ${fallback}` };

@@ -128,5 +128,5 @@ export function appPathToPageUrl(
   search: string,
 ): string {
   const path = pathSegments?.length ? '/' + pathSegments.join('/') : '/';
-  return `${origin}${path}${search}`;
+  return normalizeUrl(`${origin}${path}${search}`);
 }

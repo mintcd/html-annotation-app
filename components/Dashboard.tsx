@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Folder, ChevronDown, ChevronRight } from '../app/icons';
 import { useClient, useMobile } from "../hooks";
-import { deletePage as deletePageAPI, deleteAnnotation as deleteAnnotationAPI, updateAnnotation as updateAnnotationAPI, createPage } from '../utils/database';
+import { deletePage as deletePageAPI, deleteAnnotation as deleteAnnotationAPI, updateAnnotation as updateAnnotationAPI, createPage } from '../utils/api.client';
 import PromptBox from './PromptBox';
 import AnnotationList from './AnnotationList';
 import styles from '../styles/Dashboard.styles';

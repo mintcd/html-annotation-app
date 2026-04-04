@@ -31,7 +31,8 @@ export function highlightStartPosition(id: string, doc: Document = document): DO
   } else if (firstSpan) {
     startRange.selectNodeContents(firstSpan);
   }
-  return startRange.getBoundingClientRect();
+  const rect = startRange.getBoundingClientRect();
+  return toTopWindowRect(rect, doc);
 }
 
 export function highlightEndPosition(id: string, doc: Document = document): DOMRect | null {
@@ -50,7 +51,8 @@ export function highlightEndPosition(id: string, doc: Document = document): DOMR
   } else if (lastSpan) {
     endRange.selectNodeContents(lastSpan);
   }
-  return endRange.getBoundingClientRect();
+  const rect = endRange.getBoundingClientRect();
+  return toTopWindowRect(rect, doc);
 }
 
 export function highlightBoundingRect(id: string, doc: Document = document): DOMRect | null {
@@ -65,6 +67,41 @@ export function highlightBoundingRect(id: string, doc: Document = document): DOM
   const top = Math.min(first.top, last.top);
   const bottom = Math.max(first.bottom, last.bottom);
 
-  // Construct a DOMRect-like object
+  // Construct a DOMRect-like object in the source document's viewport,
+  // then convert it into the top-level window coordinate space.
+  const localRect = { left, top, right, bottom, width: right - left, height: bottom - top } as DOMRect;
+  return toTopWindowRect(localRect, doc);
+}
+
+// Convert a client rect from an arbitrary document's viewport into the
+// top-level window coordinate space by walking up through any containing
+// frame elements and adding their bounding rect offsets. This helps keep
+// overlays positioned correctly when content lives inside an <iframe> and
+// the top-level page is zoomed or scrolled differently (notably on iOS).
+export function toTopWindowRect(rect: DOMRect, doc: Document = document): DOMRect {
+  let left = rect.left;
+  let top = rect.top;
+  let right = rect.right;
+  let bottom = rect.bottom;
+
+  // Walk up through nested frames, accumulating offsets of each frame
+  // element as reported in its parent's viewport.
+  let win: Window | null = doc.defaultView ?? null;
+  while (win && win !== window) {
+    try {
+      const fe = win.frameElement as HTMLElement | null;
+      if (!fe) break;
+      const fRect = fe.getBoundingClientRect();
+      left += fRect.left;
+      right += fRect.left;
+      top += fRect.top;
+      bottom += fRect.top;
+      win = win.parent;
+    } catch (err) {
+      // If cross-origin or other errors occur, stop converting further.
+      break;
+    }
+  }
+
   return { left, top, right, bottom, width: right - left, height: bottom - top } as DOMRect;
 }

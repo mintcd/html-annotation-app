@@ -2,7 +2,13 @@ html,
 body {
   height: 100%;
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 .latex-textsc,
@@ -28,12 +34,9 @@ body {
   margin-right: 0.02em;
 }
 
-.cloned-content {
-  all: revert;
-}
-
 .highlighted-text {
   cursor: pointer;
-  padding: 0 1px;
+  padding-left: 2px;
+  padding-right: 1px;
   border-radius: 3px;
 }

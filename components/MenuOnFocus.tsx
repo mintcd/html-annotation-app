@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ColorPicker from "./ColorPicker";
 import { useAnnotationContext } from "../context/Annotator.context";
-import { useMobile, useElementWidth } from "../hooks";
+import { useElementWidth } from "../hooks";
 import { useFocusedId } from "../hooks/MenuOnFocus.hooks";
 import { Delete, Highlighter, Comment, Send } from "../app/icons";
 import menuOnFocusStyles from "../styles/MenuOnFocus.styles";
@@ -70,12 +70,12 @@ export default function MenuOnFocus() {
   const rect = anchorRect;
 
   const menuPosition = {
-    top: rect?.bottom ?? 0 + 10,
+    top: (rect?.bottom ?? 0) + 10,
     left: (rect?.left ?? 0) + ((rect?.width ?? 0) / 2) - (menuWidth / 2),
   };
 
   const commentPosition = {
-    top: rect?.bottom ?? 0 - 10,
+    top: (rect?.bottom ?? 0) - 10,
     left: (rect?.left ?? 0) + ((rect?.width ?? 0) / 2) - (menuWidth / 2),
   };
 

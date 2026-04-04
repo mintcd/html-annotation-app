@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { RefObject } from 'react';
 import { matchedRange, highlightRange, rangeToHtml, findBestContentNode } from '../utils/dom';
-import { getPage, createOrUpdatePage } from '../utils/database';
+import { getPage } from '../utils/api.client';
 
 type RangeResult = {
   id: string;

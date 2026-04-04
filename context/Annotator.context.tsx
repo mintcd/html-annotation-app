@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, ReactNode } from "react";
-import { useCallback, useState, useMemo, useEffect, useRef } from "react";
+import { useCallback, useState, useMemo, useRef } from "react";
 import { removeHighlights } from "../utils/dom";
-import { createAnnotation, updateAnnotation as updateAnnotationAPI, deleteAnnotation as deleteAnnotationAPI, getPage, updatePage } from "../utils/database";
+import { createAnnotation, updateAnnotation as updateAnnotationAPI, deleteAnnotation as deleteAnnotationAPI, getPage, updatePage } from "../utils/api.client";
 
 type AnnotationContextProps = {
   children: ReactNode;

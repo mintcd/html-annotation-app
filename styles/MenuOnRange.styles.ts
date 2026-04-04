@@ -1,19 +1,25 @@
 import { useMobile, useElementWidth } from "../hooks";
-import { useAnnotationContext } from "../context/Annotator.context";
+import { toTopWindowRect } from "../utils/highlight";
 
 export default function useMenuOnRangeStyles(ref: React.RefObject<HTMLElement | null>, range: Range | null) {
-  const isMobile = useMobile();
+  const { isMobile } = useMobile();
   const menuWidth = useElementWidth(ref, range);
-  const { iframeRef } = useAnnotationContext();
-
-  // range.getBoundingClientRect() is relative to the iframe's viewport.
-  // position:fixed on the parent uses the parent's viewport, so add the iframe's offset.
-  const iframeOffset = iframeRef?.current?.getBoundingClientRect() ?? { top: 0, left: 0 };
-
-  const position = range ? {
-    top: range.getBoundingClientRect().bottom + 10 + iframeOffset.top,
-    left: (range.getBoundingClientRect().left + (range.getBoundingClientRect().width / 2) - (menuWidth / 2)) + iframeOffset.left,
-  } : { top: 0, left: 0 };
+  // Convert range rect into top-level window coordinates so fixed overlays
+  // remain positioned correctly even when the annotated content is inside
+  // an <iframe> or the page is zoomed on mobile browsers.
+  const position = range ? (() => {
+    try {
+      const r = range.getBoundingClientRect();
+      const doc = (range.startContainer && (range.startContainer as Node).ownerDocument) ?? document;
+      const topRect = toTopWindowRect(r, doc);
+      return {
+        top: topRect.bottom + 10,
+        left: topRect.left + (topRect.width / 2) - (menuWidth / 2),
+      };
+    } catch (err) {
+      return { top: 0, left: 0 };
+    }
+  })() : { top: 0, left: 0 };
   return {
     menuContainer: {
       position: 'fixed' as const,

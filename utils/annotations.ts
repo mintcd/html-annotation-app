@@ -1,4 +1,4 @@
-import { listPages, getAnnotationsForPage, Page, Annotation } from './database';
+import { listPages, getAnnotationsForPage } from './api.client';
 import { matchedRange, rangeToHtml, highlightRange } from './dom';
 
 export function highlightAnnotations(annotations: AnnotationItem[], container: HTMLElement) {

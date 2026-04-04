@@ -3,7 +3,7 @@ import { cache } from 'react';
 import * as cheerio from 'cheerio';
 import * as css from 'css';
 import { originToSlug } from './url';
-import { getOrCreateWebsite } from './database';
+import { getOrCreateWebsite } from './api.client';
 
 export type ClonedPage = {
   title: string;

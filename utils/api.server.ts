@@ -1,8 +1,6 @@
 import { headers } from 'next/headers';
-import { getEnv, type Env } from './env';
-import { generatePageId, type Page } from './api-helpers';
-import type { Website } from './database';
-import type { Annotation } from './database';
+import { getEnv } from './env';
+import { generatePageId } from './api-helpers';
 
 export async function getServerOrigin(): Promise<string> {
   const h = await headers() as unknown as { get(name: string): string | null };
@@ -13,10 +11,7 @@ export async function getServerOrigin(): Promise<string> {
   return serverOrigin;
 }
 
-// ─── Direct D1 queries for Server Components ─────────────────────────────────
-// Cloudflare Workers cannot self-fetch (subrequests to the same Worker skip the
-// Worker and go through the asset layer only). Server Components must query D1
-// directly instead of calling API routes via HTTP.
+// Server components query D1 by bindings.
 
 /** Look up a website by its slug. Returns null when not found. */
 export async function getWebsiteBySlug(slug: string): Promise<Website | null> {
