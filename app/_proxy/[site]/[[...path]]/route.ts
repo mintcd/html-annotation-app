@@ -79,7 +79,6 @@ export async function GET(
   if (isScript || isScriptFile || isCss) {
     let text = await upstream.text();
     if (isScript || isScriptFile) {
-      // text += makeSignalSnippet(targetUrl);
 
       const contentType =
         (pathname.endsWith('.ts') ||
@@ -100,8 +99,7 @@ export async function GET(
       });
     }
 
-    // For CSS files, return the content unchanged. Any resource URLs inside
-    // the CSS will be requested by the browser and rewritten by middleware.
+
     return new Response(text, {
       status: upstream.status,
       headers: {

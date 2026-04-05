@@ -1,16 +1,34 @@
 import { useMobile } from "../hooks";
+import { useElementWidth } from "../hooks";
 
-export default function useMenuOnFocusStyles(textareaFocus: boolean) {
+export default function useMenuOnFocusStyles(
+  ref: React.RefObject<HTMLElement | null>,
+  rect: DOMRect | null,
+  textareaFocus: boolean
+) {
+  const { isMobile } = useMobile();
+  const menuWidth = useElementWidth(ref, rect);
+
+  const position = rect ? { top: rect.bottom + 10, left: rect.left + (rect.width / 2) - (menuWidth / 2) } : { top: 0, left: 0 };
+  const commentPosition = rect ? { top: rect.bottom - 10, left: rect.left + (rect.width / 2) - (menuWidth / 2) } : { top: 0, left: 0 };
+
   return {
     menuContainer: {
       position: 'fixed' as const,
       zIndex: 100,
       display: 'flex',
+      gap: '0.5rem',
       boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.1)',
       borderRadius: '0.75rem',
       background: 'linear-gradient(to bottom right, white, #f9fafb)',
       border: '1px solid #e5e7eb',
       backdropFilter: 'blur(4px)',
+      cursor: 'pointer',
+      color: '#4b5563',
+      fontSize: isMobile ? '1rem' : '0.875rem',
+      fontWeight: 500,
+      padding: isMobile ? '0.5rem 0.75rem' : '0.4rem 0.6rem',
+      ...position,
     },
 
     deleteButton: {
@@ -67,7 +85,8 @@ export default function useMenuOnFocusStyles(textareaFocus: boolean) {
       border: '1px solid #e5e7eb',
       backdropFilter: 'blur(4px)',
       padding: '0.75rem',
-      margin: '0 0.5rem'
+      margin: '0 0.5rem',
+      ...commentPosition
     },
 
     commentTextarea: {

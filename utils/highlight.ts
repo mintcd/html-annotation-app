@@ -32,7 +32,7 @@ export function highlightStartPosition(id: string, doc: Document = document): DO
     startRange.selectNodeContents(firstSpan);
   }
   const rect = startRange.getBoundingClientRect();
-  return toTopWindowRect(rect, doc);
+  return rect
 }
 
 export function highlightEndPosition(id: string, doc: Document = document): DOMRect | null {
@@ -52,12 +52,12 @@ export function highlightEndPosition(id: string, doc: Document = document): DOMR
     endRange.selectNodeContents(lastSpan);
   }
   const rect = endRange.getBoundingClientRect();
-  return toTopWindowRect(rect, doc);
+  return rect
 }
 
-export function highlightBoundingRect(id: string, doc: Document = document): DOMRect | null {
+export function highlightBoundingRect(id: string, doc: Document): DOMRect {
   const spans = doc.querySelectorAll<HTMLSpanElement>(`span.highlighted-text[data-highlight-id="${id}"]`);
-  if (spans.length === 0) return null;
+  if (spans.length === 0) throw new Error(`No spans found for highlight ID: ${id}`);
 
   const first = spans[0].getBoundingClientRect();
   const last = spans[spans.length - 1].getBoundingClientRect();
@@ -67,58 +67,6 @@ export function highlightBoundingRect(id: string, doc: Document = document): DOM
   const top = Math.min(first.top, last.top);
   const bottom = Math.max(first.bottom, last.bottom);
 
-  // Construct a DOMRect-like object in the source document's viewport,
-  // then convert it into the top-level window coordinate space.
-  const localRect = { left, top, right, bottom, width: right - left, height: bottom - top } as DOMRect;
-  return toTopWindowRect(localRect, doc);
-}
-
-// Convert a client rect from an arbitrary document's viewport into the
-// top-level window coordinate space by walking up through any containing
-// frame elements and adding their bounding rect offsets. This helps keep
-// overlays positioned correctly when content lives inside an <iframe> and
-// the top-level page is zoomed or scrolled differently (notably on iOS).
-export function toTopWindowRect(rect: DOMRect, doc: Document = document): DOMRect {
-  let left = rect.left;
-  let top = rect.top;
-  let right = rect.right;
-  let bottom = rect.bottom;
-
-  // Walk up through nested frames, accumulating offsets of each frame
-  // element as reported in its parent's viewport.
-  let win: Window | null = doc.defaultView ?? null;
-  while (win && win !== window) {
-    try {
-      const fe = win.frameElement as HTMLElement | null;
-      if (!fe) break;
-      const fRect = fe.getBoundingClientRect();
-      left += fRect.left;
-      right += fRect.left;
-      top += fRect.top;
-      bottom += fRect.top;
-      win = win.parent;
-    } catch (err) {
-      // If cross-origin or other errors occur, stop converting further.
-      break;
-    }
-  }
-
-  // Adjust for the top-level visual viewport offset. When the user pinches
-  // to zoom or pans on mobile, the visual viewport can be offset relative
-  // to the layout viewport. Fixed-position elements are placed relative
-  // to the visual viewport, so subtract the offset to convert the
-  // layout-based coordinates into visual-viewport coordinates.
-  try {
-    const topVV = window.visualViewport;
-    if (topVV) {
-      left -= topVV.offsetLeft;
-      right -= topVV.offsetLeft;
-      top -= topVV.offsetTop;
-      bottom -= topVV.offsetTop;
-    }
-  } catch (err) {
-    // ignore - if access is denied, return best-effort coords
-  }
-
+  // Construct a DOMRect-like object 
   return { left, top, right, bottom, width: right - left, height: bottom - top } as DOMRect;
 }

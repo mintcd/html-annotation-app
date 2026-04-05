@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import ColorPicker from "./ColorPicker";
 import { useAnnotationContext } from "../context/Annotator.context";
-import { useElementWidth } from "../hooks";
 import { useFocusedId } from "../hooks/MenuOnFocus.hooks";
 import { Delete, Highlighter, Comment, Send } from "../app/icons";
 import menuOnFocusStyles from "../styles/MenuOnFocus.styles";
@@ -18,9 +17,7 @@ export default function MenuOnFocus() {
   const menuRef = useRef<HTMLDivElement>(null);
   const { contentRef, annotations, deleteAnnotation, setCurrentHighlightColor, updateAnnotation } = useAnnotationContext();
   const { focusedId, setFocusedId } = useFocusedId();
-  const menuWidth = useElementWidth(menuRef, focusedId);
 
-  const styles = menuOnFocusStyles(textareaFocus);
 
   // Close color picker when menu is closed
   useEffect(() => {
@@ -39,6 +36,7 @@ export default function MenuOnFocus() {
 
   const iframeDoc = contentRef.current?.ownerDocument;
   const anchorRect = focusedId ? highlightBoundingRect(focusedId, iframeDoc) : null;
+  const styles = menuOnFocusStyles(menuRef, anchorRect, textareaFocus);
 
   const handleColorSelect = (id: string, newColor: string) => {
     if (!contentRef.current) return;
@@ -67,18 +65,6 @@ export default function MenuOnFocus() {
     if (!focusedId) return;
     setShowColorPicker(true);
   }
-  const rect = anchorRect;
-
-  const menuPosition = {
-    top: (rect?.bottom ?? 0) + 10,
-    left: (rect?.left ?? 0) + ((rect?.width ?? 0) / 2) - (menuWidth / 2),
-  };
-
-  const commentPosition = {
-    top: (rect?.bottom ?? 0) - 10,
-    left: (rect?.left ?? 0) + ((rect?.width ?? 0) / 2) - (menuWidth / 2),
-  };
-
   return (
     (focusedId && anchorRect) &&
     <>
@@ -87,7 +73,7 @@ export default function MenuOnFocus() {
         role="toolbar"
         aria-label="Highlight actions"
         onMouseDown={(e) => e.preventDefault()}
-        style={{ ...styles.menuContainer, ...menuPosition }}
+        style={styles.menuContainer}
       >
         <button
           onClick={() => {
@@ -133,7 +119,7 @@ export default function MenuOnFocus() {
       )}
       {showCommentInput && focusedId && anchorRect && (
         <div
-          style={{ ...(styles.commentInputContainer as React.CSSProperties), ...commentPosition }}          >
+          style={styles.commentInputContainer as React.CSSProperties}          >
           <textarea
             ref={commentTextareaRef}
             value={commentText}

@@ -13,14 +13,14 @@ export default function MenuOnRange() {
   const styles = menuStyles(menuRef, range);
 
   return (
-    range ?
-      <div
-        onClick={highlight}
-        ref={menuRef}
-        onMouseDown={(e) => e.preventDefault()}
-        style={styles.menuContainer}
-      >
-        <Highlighter size={20} color={currentHighlightColor} />
-      </div> : null
+    range &&
+    <div
+      onClick={highlight}
+      ref={menuRef}
+      onMouseDown={(e) => e.preventDefault()}
+      style={styles.menuContainer}
+    >
+      <Highlighter size={20} color={currentHighlightColor} />
+    </div>
   );
 }

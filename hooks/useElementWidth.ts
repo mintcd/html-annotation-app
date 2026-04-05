@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 
 
 export function useElementWidth(ref: React.RefObject<HTMLElement | null>, trigger?: unknown) {
   const [width, setWidth] = useState(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (ref.current) {
       setWidth(ref.current.offsetWidth);
     }
