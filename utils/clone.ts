@@ -39,8 +39,6 @@ function absoluteUrl(base: string, relative: string): string {
   }
 }
 
-
-
 function isJsonOnly(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;

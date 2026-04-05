@@ -1,20 +1,15 @@
 import { useMobile, useElementWidth } from "../hooks";
-import { toTopWindowRect } from "../utils/highlight";
 
 export default function useMenuOnRangeStyles(ref: React.RefObject<HTMLElement | null>, range: Range | null) {
   const { isMobile } = useMobile();
   const menuWidth = useElementWidth(ref, range);
-  // Convert range rect into top-level window coordinates so fixed overlays
-  // remain positioned correctly even when the annotated content is inside
-  // an <iframe> or the page is zoomed on mobile browsers.
+
   const position = range ? (() => {
     try {
-      const r = range.getBoundingClientRect();
-      const doc = (range.startContainer && (range.startContainer as Node).ownerDocument) ?? document;
-      const topRect = toTopWindowRect(r, doc);
+      const rec = range.getBoundingClientRect();
       return {
-        top: topRect.bottom + 10,
-        left: topRect.left + (topRect.width / 2) - (menuWidth / 2),
+        top: rec.bottom + 10,
+        left: rec.left + (rec.width / 2) - (menuWidth / 2),
       };
     } catch (err) {
       return { top: 0, left: 0 };

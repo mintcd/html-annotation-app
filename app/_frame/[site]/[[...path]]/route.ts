@@ -322,6 +322,7 @@ export async function GET(
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
         'X-Frame-Options': 'SAMEORIGIN',
+        'Set-Cookie': `__proxy_site=${site}; Path=/; SameSite=Lax${reqUrl.protocol === 'https:' ? '; Secure' : ''}`,
       },
     });
   }
@@ -410,8 +411,10 @@ export async function GET(
     $(el).attr('style', rewritten);
   });
 
-  // ── 4. Inject content script as first child of <head> ─────────────────
-  $('head').prepend(contentScript(site));
+  // ── 4. Previously we injected a runtime content script here to rewrite
+  // root-relative URLs inside the iframe. That work is now handled by
+  // middleware which rewrites asset requests to /_proxy/{site}/… based on
+  // the iframe referer, so we no longer inject the runtime interceptor.
 
   // ── 5. Return ─────────────────────────────────────────────────────────
   const rewritten = $.html();
@@ -422,6 +425,7 @@ export async function GET(
       'Cache-Control': 'no-store',
       // Allow framing from our own origin
       'X-Frame-Options': 'SAMEORIGIN',
+      'Set-Cookie': `__proxy_site=${site}; Path=/; SameSite=Lax${reqUrl.protocol === 'https:' ? '; Secure' : ''}`,
     },
   });
 }

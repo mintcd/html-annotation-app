@@ -58,6 +58,153 @@ export async function awaitDomSettled(iframe: HTMLIFrameElement) {
   console.log("DOM settled");
 }
 
+export function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCount: number) {
+  try {
+    const doc = iframe.contentDocument as Document;
+    const iWin = iframe.contentWindow ?? (doc as any)?.defaultView;
+    if (doc && iWin) {
+      const initialScripts = Array.from(doc.getElementsByTagName('script')) as HTMLScriptElement[];
+      let totalScripts = initialScripts.length;
+      let executedCount = 0;
+      let concluded = false;
+
+      console.log('trackScriptExecution start - total scripts:', totalScripts);
+
+      const externalListeners: Array<{ el: HTMLScriptElement; handler: EventListener }> = [];
+      const observed = new WeakSet<HTMLScriptElement>();
+      let observer: MutationObserver | null = null;
+      let onFrameUnload: (() => void) | null = null;
+
+      const getPerfEntries = (): PerformanceResourceTiming[] => {
+        try {
+          if (iWin && iWin.performance && typeof iWin.performance.getEntriesByType === 'function') {
+            return iWin.performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+          }
+        } catch (e) {
+          // ignore
+        }
+        return [];
+      };
+
+      const conclude = async () => {
+        if (concluded) return;
+        concluded = true;
+        console.log('Concluding - observed scripts:', totalScripts);
+
+        // cleanup
+        try { observer?.disconnect(); } catch (e) { /* ignore */ }
+        externalListeners.forEach(({ el, handler }) => {
+          el.removeEventListener('load', handler);
+          el.removeEventListener('error', handler);
+        });
+        if (onFrameUnload) iframe.removeEventListener('load', onFrameUnload);
+
+      };
+
+      const checkAndConclude = () => {
+        console.log('trackScriptExecution: executedCount=', executedCount, 'total=', totalScripts);
+        if (executedCount >= totalScripts) conclude();
+      };
+
+      function processExistingScript(s: HTMLScriptElement) {
+        observed.add(s);
+        if (!s.src) {
+          executedCount++;
+          return;
+        }
+
+        const absSrc = (() => { try { return new URL(s.src, doc.baseURI).href; } catch (e) { return s.src; } })();
+        const perf = getPerfEntries();
+        const already = perf.some((p) => p.name === absSrc || p.name === s.src || (typeof p.name === 'string' && p.name.endsWith(s.src)));
+        if (already) {
+          executedCount++;
+          // console.log('trackScriptExecution: external already-loaded', s.src);
+          return;
+        }
+
+        const handler: EventListener = () => {
+          executedCount++;
+          console.log('trackScriptExecution: load/error for', s.src, 'count=', executedCount);
+          s.removeEventListener('load', handler);
+          s.removeEventListener('error', handler);
+          checkAndConclude();
+        };
+        s.addEventListener('load', handler);
+        s.addEventListener('error', handler);
+        externalListeners.push({ el: s, handler });
+      }
+
+      function handleNewScript(s: HTMLScriptElement) {
+        if (observed.has(s)) return;
+        observed.add(s);
+        totalScripts++;
+        console.log('trackScriptExecution: new script added, totalScripts=', totalScripts, 'src=', s.src || '[inline]');
+
+        if (!s.src) {
+          executedCount++;
+          console.log('trackScriptExecution: new inline script counted, count=', executedCount);
+          checkAndConclude();
+          return;
+        }
+
+        const absSrc = (() => { try { return new URL(s.src, doc.baseURI).href; } catch (e) { return s.src; } })();
+        const perf = getPerfEntries();
+        const already = perf.some((p) => p.name === absSrc || p.name === s.src || (typeof p.name === 'string' && p.name.endsWith(s.src)));
+        if (already) {
+          executedCount++;
+          console.log('trackScriptExecution: new external already-loaded', s.src, 'count=', executedCount);
+          checkAndConclude();
+          return;
+        }
+
+        const handler: EventListener = () => {
+          executedCount++;
+          console.log('trackScriptExecution: new load/error for', s.src, 'count=', executedCount);
+          s.removeEventListener('load', handler);
+          s.removeEventListener('error', handler);
+          checkAndConclude();
+        };
+        s.addEventListener('load', handler);
+        s.addEventListener('error', handler);
+        externalListeners.push({ el: s, handler });
+      }
+
+      // Process currently existing scripts
+      initialScripts.forEach(processExistingScript);
+
+      // Observe dynamically added scripts
+      observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (const node of Array.from(m.addedNodes)) {
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            const el = node as Element;
+            if (el.tagName?.toLowerCase() === 'script') {
+              handleNewScript(el as HTMLScriptElement);
+            } else {
+              el.querySelectorAll && el.querySelectorAll('script').forEach((sc) => handleNewScript(sc as HTMLScriptElement));
+            }
+          }
+        }
+      });
+      try { observer.observe(doc, { childList: true, subtree: true }); } catch (e) { /* ignore */ }
+
+      // If nothing to wait for, conclude immediately.
+      checkAndConclude();
+
+      // Cleanup listeners if iframe reloads/navigates.
+      onFrameUnload = () => {
+        externalListeners.forEach(({ el, handler }) => {
+          el.removeEventListener('load', handler);
+          el.removeEventListener('error', handler);
+        });
+        try { observer?.disconnect(); } catch (e) { /* ignore */ }
+      };
+      iframe.addEventListener('load', onFrameUnload);
+    }
+  } catch (err) {
+    console.warn('Script load tracking failed', err);
+  }
+}
 
 
 export function shortenedHtml(html: string, maxLength: number = 150): string {

@@ -11,8 +11,7 @@ import PasteHTML from './PasteHTML';
 import annotationStyles from "../styles/Annotator.styles";
 import Loader from './Loader';
 import { getPage, updatePage } from '@/utils/api.client';
-import { findBestContentNode } from '@/utils/dom';
-import { awaitDomSettled } from '@/utils/dom';
+import { findBestContentNode, awaitDomSettled, trackScriptExecution } from '@/utils/dom';
 import { highlightAnnotations } from '@/utils/annotations';
 
 type AnnotatorProps = {
@@ -66,13 +65,13 @@ export default function Annotator({ annotations, title, remoteScriptCount, pageU
       })();
     }
 
-    trackScriptExecution(iframe, remoteScriptCount);
     await awaitDomSettled(iframe);
-    // Ensure highlight styles exist inside the iframe document (iframe has its own DOM)
+
+    trackScriptExecution(iframe, remoteScriptCount);
 
     const id = 'annotation-highlight-styles';
-    const doc = iframe.contentDocument;
-    if (doc && !doc.getElementById(id)) {
+    const doc = iframe.contentDocument as Document;
+    if (!doc.getElementById(id)) {
       const styleEl = doc.createElement('style');
       styleEl.id = id;
       styleEl.textContent = `
@@ -80,68 +79,15 @@ export default function Annotator({ annotations, title, remoteScriptCount, pageU
             cursor: pointer;
             padding-left: 1px;
             padding-right: 1px;
-            border-radius: 3px;
           }
         `;
-      doc.head?.appendChild(styleEl);
+      doc.head.appendChild(styleEl);
 
     }
 
     highlightAnnotations(annotations, iframe.contentDocument?.body as HTMLElement);
     contentRef.current = findBestContentNode(iframe.contentDocument?.body as HTMLElement);
     setIframeReady(true);
-  }
-
-  function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCount: number) {
-    console.log("Remote script count", remoteScriptCount);
-    const iWin = iframe.contentWindow as (Window & { __proxy_script_executed?: string[] });
-    const IDLE_MS = 2000; // wait this long with no new events to conclude
-    let idleTimer: number | null = null;
-    let cleanedUp = false;
-
-    const cleanup = (handler?: EventListener) => {
-      if (cleanedUp) return;
-      cleanedUp = true;
-      if (handler) iWin.removeEventListener('proxy:script-executed', handler);
-      if (idleTimer) window.clearTimeout(idleTimer);
-    };
-
-    const conclude = () => {
-      cleanup(onExec);
-      const executed = iWin.__proxy_script_executed ?? [];
-      console.log('Concluding - executed scripts:', executed.length);
-      // If this page had no recorded script count, write back the observed count.
-      if (remoteScriptCount === 0) {
-        // Only update the page's script count if the page already exists; Dashboard creates pages.
-        (async () => {
-          const existing = await getPage(pageUrl);
-          if (existing) await updatePage({ url: pageUrl, numberOfScripts: executed.length });
-        })();
-      }
-    };
-
-    const scheduleIdle = () => {
-      if (idleTimer) window.clearTimeout(idleTimer);
-      idleTimer = window.setTimeout(conclude, IDLE_MS);
-    };
-
-    const onExec: EventListener = () => {
-      const executed = iWin.__proxy_script_executed ?? [];
-      if (remoteScriptCount > 0 && executed.length >= remoteScriptCount) {
-        conclude();
-        return;
-      }
-      // otherwise, reset idle timer and wait for no-more-events window
-      scheduleIdle();
-    };
-
-    // Start listening and also start a fallback idle timer in case no events fire
-    iWin.addEventListener('proxy:script-executed', onExec);
-    scheduleIdle();
-
-    // cleanup if iframe navigates/reloads
-    const onFrameUnload = () => cleanup(onExec);
-    iframe.addEventListener('load', onFrameUnload);
   }
 
   return (

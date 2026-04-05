@@ -3,7 +3,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vinext dev --port 5000",
+    "dev": "vinext dev --port 5000 --host 0.0.0.0",
     "build": "vinext build",
     "deploy": "vinext deploy",
     "start": "vinext start",
