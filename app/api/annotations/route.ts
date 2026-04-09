@@ -1,11 +1,64 @@
 import { getEnv } from "../../../utils/env";
 import {
-  type Annotation,
   generatePageId,
   now,
   json,
   err,
 } from "../../../utils/api-helpers";
+
+function normalizeAnnotationPosition(a: any) {
+  if (!a) return a;
+  let p = (a as any).position;
+  if (p == null) {
+    a.position = null;
+    return a;
+  }
+
+  // If position is a JSON string, parse it first
+  if (typeof p === 'string') {
+    try {
+      p = JSON.parse(p);
+    } catch (e) {
+      a.position = null;
+      return a;
+    }
+  }
+
+  if (Array.isArray(p)) {
+    const [startPosition, endPosition, startOffset, endOffset] = p;
+    a.position = {
+      startPosition: Number(startPosition),
+      endPosition: Number(endPosition),
+      startOffset: Number(startOffset),
+      endOffset: Number(endOffset),
+    };
+    return a;
+  }
+
+  // If it's already an object, coerce numeric fields if present
+  if (typeof p === 'object') {
+    const sp = (p as any).startPosition ?? (p as any).start_pos ?? (p as any)[0];
+    const ep = (p as any).endPosition ?? (p as any).end_pos ?? (p as any)[1];
+    const so = (p as any).startOffset ?? (p as any).start_offset ?? (p as any)[2];
+    const eo = (p as any).endOffset ?? (p as any).end_offset ?? (p as any)[3];
+
+    if (sp == null || ep == null || so == null || eo == null) {
+      a.position = null;
+      return a;
+    }
+
+    a.position = {
+      startPosition: Number(sp),
+      endPosition: Number(ep),
+      startOffset: Number(so),
+      endOffset: Number(eo),
+    };
+    return a;
+  }
+
+  a.position = null;
+  return a;
+}
 
 export async function GET(request: Request) {
   const env = getEnv();
@@ -21,18 +74,18 @@ export async function GET(request: Request) {
     .bind(pageId)
     .all<Annotation>();
 
-  // Fetch HTML content from R2 for each annotation
+  // Fetch HTML content from R2 for each annotation and parse stored `path` JSON.
   const annotations = await Promise.all(
     (result.results || []).map(async (a: Annotation) => {
+      // Fetch HTML content (if any) and let the normalizer handle `position`
+      let htmlContent: string | null = null;
       if (a.html) {
         try {
           const obj = await env.ANNOTATIONS_BUCKET.get(a.html);
-          return { ...a, html: obj ? await obj.text() : null };
-        } catch {
-          return { ...a, html: null };
-        }
+          htmlContent = obj ? await obj.text() : null;
+        } catch { htmlContent = null; }
       }
-      return a;
+      return normalizeAnnotationPosition({ ...a, html: htmlContent });
     })
   );
   return json(annotations);
@@ -46,6 +99,7 @@ export async function POST(request: Request) {
     html?: string;
     color?: string;
     comment?: string;
+    position?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number } | null;
   };
   if (!body.url || !body.text)
     return err("Missing required fields: url, text", 400);
@@ -55,8 +109,8 @@ export async function POST(request: Request) {
   const ts = now();
 
   const annotation = await env.DB.prepare(
-    `INSERT INTO annotations (id, page_id, text, html, color, comment, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
+    `INSERT INTO annotations (id, page_id, text, html, color, comment, position, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
   )
     .bind(
       id,
@@ -65,12 +119,15 @@ export async function POST(request: Request) {
       null,
       body.color || "#87ceeb",
       body.comment || null,
+      body.position ? JSON.stringify(body.position) : null,
       ts,
       ts
     )
     .first<Annotation>();
 
   let returnAnnotation = annotation!;
+  // normalize stored position (may be a JSON string coming from the DB)
+  returnAnnotation = normalizeAnnotationPosition(returnAnnotation as any);
   let htmlContent = body.html ?? null;
 
   // Upload HTML to R2 if provided
@@ -85,6 +142,7 @@ export async function POST(request: Request) {
     )
       .bind(htmlPath, ts, id)
       .first<Annotation>())!;
+    returnAnnotation = normalizeAnnotationPosition(returnAnnotation as any);
   }
 
   // Update page annotation count
@@ -94,7 +152,10 @@ export async function POST(request: Request) {
     .bind(ts, pageId)
     .run();
 
-  return json({ ...returnAnnotation, html: htmlContent });
+
+  const resp = { ...returnAnnotation, html: htmlContent } as any;
+  normalizeAnnotationPosition(resp);
+  return json(resp);
 }
 
 export async function PUT(request: Request) {
@@ -105,6 +166,7 @@ export async function PUT(request: Request) {
     html?: string;
     color?: string;
     comment?: string;
+    position?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number } | null;
   };
   if (!body.id) return err("Missing required field: id", 400);
 
@@ -144,6 +206,11 @@ export async function PUT(request: Request) {
     updates.push("comment = ?");
     values.push(body.comment);
   }
+  if (body.position !== undefined) {
+    updates.push("position = ?");
+    values.push(body.position ? JSON.stringify(body.position) : null);
+  }
+
   const ts = now();
   updates.push("updated_at = ?");
   values.push(ts);
@@ -164,7 +231,11 @@ export async function PUT(request: Request) {
     } catch { }
   }
 
-  return json({ ...updated, html: htmlContent });
+
+
+  const resp = { ...updated, html: htmlContent } as any;
+  normalizeAnnotationPosition(resp);
+  return json(resp);
 }
 
 export async function DELETE(request: Request) {

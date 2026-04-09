@@ -66,9 +66,6 @@ export default function Sidebar({ onPasteHTML }: { onPasteHTML?: () => void }) {
     window.addEventListener('blur', handleBlur);
     return () => window.removeEventListener('blur', handleBlur);
   }, [open]);
-  // Memoize panel width calculation
-  const panelWidthStyle: React.CSSProperties = useMemo(() =>
-    isMobile ? { width: viewportInfo.visualWidth } : { width }, [isMobile, viewportInfo.visualWidth, width]);
 
   // Memoize sidebar positioning for mobile
   const sidebarMobileStyle = {
@@ -78,18 +75,6 @@ export default function Sidebar({ onPasteHTML }: { onPasteHTML?: () => void }) {
     left: 0,
   }
   usePreventScroll(sidebarRef as React.RefObject<HTMLElement>, isMobile);
-  // Animation variants for better performance
-  const sidebarVariants = useMemo(() => ({
-    hidden: isMobile
-      ? { y: "100%" }
-      : { x: "100%" },
-    visible: isMobile
-      ? { y: 0 }
-      : { x: 0 },
-    exit: isMobile
-      ? { y: "100%" }
-      : { x: "100%" }
-  }), [isMobile]);
 
   return (
     <>

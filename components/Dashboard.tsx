@@ -18,7 +18,7 @@ interface AnnotationPage {
   timestamp: string;
   title?: string;
   count: number;
-  annotations: AnnotationItem[];
+  annotations: Annotation[];
   blobUrl: string;
   uploadedAt: string;
 }
@@ -275,7 +275,7 @@ export default function Dashboard() {
       }
 
       // Update the annotation using the API
-      await updateAnnotationAPI(editingComment.annotationId, annotation.text, annotation.html);
+      await updateAnnotationAPI(editingComment.annotationId, { text: annotation.text, html: annotation.html });
     } catch (error) {
       // Restore the old comment in local state since save failed
       setAnnotationPages(prev => prev.map(page =>
@@ -303,7 +303,7 @@ export default function Dashboard() {
   return (
     <div style={styles.container(isMobile)}>
       {/* Mobile backdrop */}
-      {isClient && isMobile && sidebarOpen && (
+      {isMobile && sidebarOpen && (
         <div
           style={styles.mobileBackdrop}
           onClick={() => setSidebarOpen(false)}
@@ -311,7 +311,7 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar - URL List */}
-      {isClient && isMobile ? (
+      {isMobile ? (
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
@@ -377,23 +377,15 @@ export default function Dashboard() {
 
                 {/* Search */}
                 <div style={styles.searchSection}>
-                  {isClient ? (
-                    <input
-                      type="search"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search annotations..."
-                      style={styles.searchInput}
-                      onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'}
-                      onBlur={(e) => e.currentTarget.style.boxShadow = 'none'}
-                    />
-                  ) : (
-                    // Render a non-interactive placeholder on the server to avoid
-                    // hydration mismatches caused by browser extensions injecting
-                    // attributes (e.g. Microsoft Editor's `data-ms-editor`). The
-                    // real input is mounted on the client only.
-                    <div aria-hidden style={styles.searchInput} />
-                  )}
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search annotations..."
+                    style={styles.searchInput}
+                    onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'}
+                    onBlur={(e) => e.currentTarget.style.boxShadow = 'none'}
+                  />
                 </div>
 
                 {/* URL List */}
@@ -447,7 +439,7 @@ export default function Dashboard() {
                                       key={url}
                                       onClick={() => {
                                         setSelectedUrl(normalizedUrl);
-                                        if (isClient && isMobile) setSidebarOpen(false);
+                                        if (isMobile) setSidebarOpen(false);
                                       }}
                                       style={styles.pageButton(isSelected)}
                                       onMouseEnter={(e) => {
@@ -526,19 +518,15 @@ export default function Dashboard() {
 
           {/* Search */}
           <div style={styles.searchSection}>
-            {isClient ? (
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search annotations..."
-                style={styles.searchInput}
-                onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'}
-                onBlur={(e) => e.currentTarget.style.boxShadow = 'none'}
-              />
-            ) : (
-              <div aria-hidden style={styles.searchInput} />
-            )}
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search annotations..."
+              style={styles.searchInput}
+              onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'}
+              onBlur={(e) => e.currentTarget.style.boxShadow = 'none'}
+            />
           </div>
 
           {/* URL List */}
@@ -592,7 +580,7 @@ export default function Dashboard() {
                                 key={url}
                                 onClick={() => {
                                   setSelectedUrl(normalizedUrl);
-                                  if (isClient && isMobile) setSidebarOpen(false);
+                                  if (isMobile) setSidebarOpen(false);
                                 }}
                                 style={styles.pageButton(isSelected)}
                                 onMouseEnter={(e) => {

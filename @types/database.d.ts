@@ -19,9 +19,10 @@ type Annotation = {
   id: string;
   page_id: string;
   text: string;
-  html: string;
+  html?: string | null;
+  position?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number };
   color: string;
-  comment: string | null;
+  comment?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,4 +1,4 @@
-
+import { buildKMPTable } from "./string";
 
 export async function awaitDomSettled(iframe: HTMLIFrameElement) {
   if (!iframe) return;
@@ -19,12 +19,8 @@ export async function awaitDomSettled(iframe: HTMLIFrameElement) {
   }
 
   // Wait for document.fonts if available
-  try {
-    const fonts = (doc as any).fonts;
-    if (fonts && fonts.ready) await fonts.ready;
-  } catch (e) {
-    // ignore
-  }
+  const fonts = (doc as any).fonts;
+  if (fonts && fonts.ready) await fonts.ready;
 
   // Wait for DOM to be idle (no mutations) for a short window
   await new Promise<void>((resolve) => {
@@ -58,7 +54,7 @@ export async function awaitDomSettled(iframe: HTMLIFrameElement) {
   console.log("DOM settled");
 }
 
-export function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCount: number) {
+export function trackScriptExecution(iframe: HTMLIFrameElement) {
   try {
     const doc = iframe.contentDocument as Document;
     const iWin = iframe.contentWindow ?? (doc as any)?.defaultView;
@@ -68,7 +64,7 @@ export function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCoun
       let executedCount = 0;
       let concluded = false;
 
-      console.log('trackScriptExecution start - total scripts:', totalScripts);
+      console.log('Total scripts:', totalScripts);
 
       const externalListeners: Array<{ el: HTMLScriptElement; handler: EventListener }> = [];
       const observed = new WeakSet<HTMLScriptElement>();
@@ -89,7 +85,7 @@ export function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCoun
       const conclude = async () => {
         if (concluded) return;
         concluded = true;
-        console.log('Concluding - observed scripts:', totalScripts);
+        console.log('Execution complete - total scripts:', totalScripts);
 
         // cleanup
         try { observer?.disconnect(); } catch (e) { /* ignore */ }
@@ -102,7 +98,7 @@ export function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCoun
       };
 
       const checkAndConclude = () => {
-        console.log('trackScriptExecution: executedCount=', executedCount, 'total=', totalScripts);
+        // console.log('trackScriptExecution: executedCount=', executedCount, 'total=', totalScripts);
         if (executedCount >= totalScripts) conclude();
       };
 
@@ -207,7 +203,7 @@ export function trackScriptExecution(iframe: HTMLIFrameElement, remoteScriptCoun
 }
 
 
-export function shortenedHtml(html: string, maxLength: number = 150): string {
+export function shortenHtml(html: string, maxLength: number = 150): string {
   html = (html || '').trim();
   if (!html) return '';
 
@@ -546,97 +542,149 @@ export function cleanedHtml(html: string): { html: string; mathSource?: string }
   return { html: finalHtml, mathSource };
 }
 
-export function matchedRange(root: HTMLElement, searchText: string): Range | null {
-  if (!searchText || !searchText.trim()) return null;
 
-  // console.log(`[matchedRange] Starting search for: "${searchText}"`);
+const positionsCache = new WeakMap<HTMLElement, TextPosition[]>();
+function getTextPositions(root: HTMLElement): TextPosition[] {
+  const ownerDoc = root.ownerDocument;
+
+  let positions = positionsCache.get(root);
+  if (!positions) {
+    const walker = ownerDoc.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          const t = (node as Text).nodeValue;
+          if (!t || t.length === 0) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    const textNodes: Text[] = [];
+    for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+      textNodes.push(n);
+    }
+    if (textNodes.length === 0)
+      throw new Error("No text nodes found in the document");
+
+    // Build positions of non-whitespace characters
+    positions = [];
+    for (const node of textNodes) {
+      const s = node.nodeValue as string;
+      for (let i = 0; i < s.length; i++) {
+        if (!/\s/.test(s[i])) {
+          positions.push({ node, offset: i, char: s[i] });
+        }
+      }
+    }
+    positionsCache.set(root, positions);
+  }
+  return positions;
+}
+
+export function getRange(root: HTMLElement, searchText: string, rangePosition?: Annotation['position']): {
+  range: Range;
+  usedPosition: boolean;
+  resolvedPosition?: { startPosition: number, endPosition: number, startOffset: number, endOffset: number };
+} {
+  // First try the position-based resolver when a cached position is provided
+  if (rangePosition) {
+    try {
+      const range = getRangeByPosition(root, searchText, rangePosition);
+      if (range) {
+        return { range, usedPosition: true };
+      }
+    } catch (e) {
+      // fall through to full-text fallback
+    }
+  }
+
+  // Fallback to full-text KMP-based resolver which also returns canonical
+  // position information so callers can persist it.
+  const res = getRangeByText(root, searchText);
+  return {
+    range: res.range,
+    usedPosition: false,
+    resolvedPosition: { startPosition: res.startPosition, endPosition: res.endPosition, startOffset: res.startOffset, endOffset: res.endOffset }
+  };
+}
+
+
+
+export function getRangeByText(root: HTMLElement, searchText: string): {
+  range: Range,
+  startPosition: number,
+  endPosition: number,
+  startOffset: number,
+  endOffset: number
+} {
+  if (!searchText || !searchText.trim())
+    throw new Error("Search text must be non-empty");
 
   // Normalize searchText by removing all whitespace
-  const normalizedSearch = searchText.replace(/\s/g, '');
-  // console.log(`[matchedRange] Normalized search: "${normalizedSearch}"`);
-
-  // --- Precompute KMP failure function (lps) for the normalized pattern
-  const pat = normalizedSearch;
+  const pat = searchText.replace(/\s/g, '');
   const m = pat.length;
-  const lps = new Array<number>(m).fill(0);
-  for (let i = 1, len = 0; i < m;) {
-    if (pat[i] === pat[len]) {
-      lps[i++] = ++len;
-    } else if (len) {
-      len = lps[len - 1];
-    } else {
-      lps[i++] = 0;
-    }
-  }
+  const lps = buildKMPTable(pat);
 
-  // --- Collect text nodes (keep whitespace; skip highlighted wrappers)
-  const ownerDoc = root.ownerDocument || document;
-  const walker = ownerDoc.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode(node) {
-        const t = (node as Text).nodeValue;
-        if (!t || t.length === 0) return NodeFilter.FILTER_REJECT;
-        const parent = (node as Text).parentElement;
-        if (parent?.classList.contains('highlighted-text')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }
-  );
+  const positions = getTextPositions(root);
+  const ownerDoc = root.ownerDocument;
 
-  const textNodes: Text[] = [];
-  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
-    textNodes.push(n);
-  }
-  if (textNodes.length === 0) {
-    return null;
-  }
-
-  // --- Build positions array: only non-whitespace characters with their original positions
-  type Position = { node: Text; offset: number; char: string };
-  const positions: Position[] = [];
-  for (const node of textNodes) {
-    const s = node.nodeValue as string;
-    for (let i = 0; i < s.length; i++) {
-      if (!/\s/.test(s[i])) {
-        positions.push({ node, offset: i, char: s[i] });
-      }
-    }
-  }
-
-  const normalizedText = positions.map(p => p.char).join('');
-
-  // --- Stream KMP on the normalized text
-  let j = 0; // index in pattern
-
-  for (let idx = 0; idx < normalizedText.length; idx++) {
-    const ch = normalizedText[idx];
-
-    while (j > 0 && ch !== pat[j]) {
-      j = lps[j - 1];
-    }
-
+  // Run KMP on the flattened text
+  let j = 0;
+  for (let idx = 0; idx < positions.length; idx++) {
+    const ch = positions[idx].char;
+    while (j > 0 && ch !== pat[j]) j = lps[j - 1];
     if (ch === pat[j]) {
       j++;
-      // console.log(`[matchedRange] Match progress: ${j}/${m}`);
       if (j === m) {
-        // Full match found from idx - m + 1 to idx
         const startPos = positions[idx - m + 1];
         const endPos = positions[idx];
-        // console.log(`[matchedRange] Full match found from position ${idx - m + 1} to ${idx}`);
         const range = ownerDoc.createRange();
         range.setStart(startPos.node, startPos.offset);
         range.setEnd(endPos.node, endPos.offset + 1);
-        return range;
+
+        return { range, startPosition: idx - m + 1, endPosition: idx, startOffset: startPos.offset, endOffset: endPos.offset + 1 };
       }
     }
   }
 
   console.warn(`Text "${searchText.substring(0, 50)}..." not found in document`);
-  return null;
+  throw new Error("Text not found in document");
+}
+
+export function getRangeByPosition(root: HTMLElement, searchText: string, rangePosition: { startPosition: number, endPosition: number, startOffset: number, endOffset: number }): Range | null {
+  console.log('Attempting position-based range retrieval with', rangePosition);
+  if (!searchText || !searchText.trim()) throw new Error("Search text must be non-empty");
+
+  const pat = searchText.replace(/\s/g, '');
+  const positions = getTextPositions(root);
+  const ownerDoc = root.ownerDocument;
+
+  const { startPosition, endPosition, startOffset, endOffset } = rangePosition;
+
+  // Reconstruct the flattened (non-whitespace) string from the positions slice
+  let s = '';
+  for (let i = startPosition; i <= endPosition; i++) s += positions[i].char;
+
+  if (s !== pat) {
+    console.warn(`Position-based retrieval failed: expected "${pat}", got "${s}"`);
+    return null;
+  };
+
+  console.log('Position range matches search text, building Range');
+
+  // Build Range using provided offsets. The stored offsets are expected to
+  // match the node offsets used when the positions were recorded (startOffset
+  // is the offset into the start text node; endOffset is the exclusive end
+  // offset for the end text node).
+  const startNode = positions[startPosition].node;
+  const endNode = positions[endPosition].node;
+
+  const range = ownerDoc.createRange();
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
+  return range;
 }
 
 export function highlightRange(range: Range, color: string = "#ffff00", id?: string): string {
@@ -651,91 +699,114 @@ export function highlightRange(range: Range, color: string = "#ffff00", id?: str
   if (range.startContainer.nodeType === Node.TEXT_NODE) {
     (range.startContainer as Text).splitText(range.startOffset);
   }
-  const collected = collectNodes(range);
-
-  // Group consecutive single inline nodes that are siblings
-  const grouped: (Node | Node[])[] = [];
-  let i = 0;
-  while (i < collected.length) {
-    if (Array.isArray(collected[i])) {
-      grouped.push(collected[i]);
-      i++;
+  // Build ordered wrap actions between the split boundaries. Each action is
+  // either a group of consecutive sibling inline nodes to wrap, or a block
+  // element that should have its inline children wrapped recursively.
+  const actions = collectWrapActions(range);
+  for (const a of actions) {
+    if (a.type === 'wrap') {
+      wrapNodes(a.nodes, color, id);
     } else {
-      // Start a group of consecutive single inline nodes
-      const group: Node[] = [collected[i] as Node];
-      i++;
-      while (i < collected.length && !Array.isArray(collected[i]) && !isBlockElement(collected[i] as Node) && group[group.length - 1].nextSibling === collected[i]) {
-        group.push(collected[i] as Node);
-        i++;
-      }
-      if (group.length === 1) {
-        grouped.push(group[0]);
-      } else {
-        grouped.push(group);
-      }
+      wrapInlineChildren(a.node, color, id);
     }
   }
-
-  // Now implement the highlighting strategy
-  grouped.forEach((item) => {
-    if (Array.isArray(item)) {
-      // Consecutive inline siblings: wrap them
-      wrapNodes(item, color, id);
-    } else {
-      // Single node
-      if (isBlockElement(item)) {
-        // For block node, recursively wrap its consecutive inline children
-        wrapInlineChildren(item, color, id);
-      } else {
-        // Single inline node: wrap it
-        wrapNodes([item], color, id);
-      }
-    }
-  });
 
   return id;
 }
 
-function collectNodes(range: Range): (Node | Node[])[] {
-  const ancestor = range.commonAncestorContainer;
-  const root = ancestor.nodeType === Node.ELEMENT_NODE ? ancestor : ancestor.parentElement;
+type WrapAction =
+  | { type: 'wrap'; parent: Node; nodes: Node[] }
+  | { type: 'block'; node: Node };
 
-  if (!root) return [];
+function collectWrapActions(range: Range): WrapAction[] {
+  const actions: WrapAction[] = [];
+  const start = range.startContainer;
+  const end = range.endContainer;
+  const root = range.commonAncestorContainer;
+  if (!root) return actions;
 
-  const result: (Node | Node[])[] = [];
+  const doc = (root && root.ownerDocument) || document;
 
-  // Collect fully contained direct children of root
-  for (let child = root.firstChild; child; child = child.nextSibling) {
-    if (nodeFullyContained(range, child)) {
-      result.push(child);
-    } else {
-      // Check if intersects
-      const nr = (child.ownerDocument || document).createRange();
-      if (child.nodeType === Node.TEXT_NODE) {
-        nr.selectNodeContents(child);
-      } else {
-        nr.selectNode(child);
-      }
-      const intersects =
-        range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
-        range.compareBoundaryPoints(Range.START_TO_END, nr) > 0;
-
-      if (intersects) {
-        // Collect fully contained grandchildren
-        const grandchildren: Node[] = [];
-        for (let gc = child.firstChild; gc; gc = gc.nextSibling) {
-          if (nodeFullyContained(range, gc)) {
-            grandchildren.push(gc);
-          }
+  const walker = doc.createTreeWalker(
+    root as Node,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node: Node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const s = (node as Text).nodeValue;
+          if (!s || s.length === 0) return NodeFilter.FILTER_REJECT;
         }
-        if (grandchildren.length > 0) {
-          result.push(grandchildren);
-        }
+        return NodeFilter.FILTER_ACCEPT;
       }
+    }
+  );
+
+  // Advance walker to the start node
+  walker.currentNode = start;
+  let n: Node | null = start;
+
+  let inlineGroup: { parent: Node | null; nodes: Node[] } | null = null;
+
+  function flushInline() {
+    if (inlineGroup && inlineGroup.nodes.length > 0) {
+      actions.push({ type: 'wrap', parent: inlineGroup.parent as Node, nodes: inlineGroup.nodes });
+      inlineGroup = null;
     }
   }
 
-  return result;
+  while (n) {
+    // If this is a block element fully inside the range, handle it separately
+    if (n.nodeType === Node.ELEMENT_NODE && isBlockElement(n) && nodeFullyContained(range, n)) {
+      flushInline();
+      actions.push({ type: 'block', node: n });
+      // Skip the block's subtree
+      const next = walker.nextSibling();
+      n = next;
+      if (!n) break;
+      if (n === end) {
+        // continue loop to process end
+      }
+      continue;
+    }
+
+    // If the node itself is fully contained and is an inline element or text,
+    // group it by its direct parent (so wrappers are inserted in the correct
+    // parent and we never attempt to wrap across different parents).
+    if (nodeFullyContained(range, n)) {
+      const parent = n.parentNode;
+      if (parent) {
+        if (!inlineGroup) {
+          inlineGroup = { parent, nodes: [n] };
+        } else {
+          const last = inlineGroup.nodes[inlineGroup.nodes.length - 1] as Node;
+          if (inlineGroup.parent === parent && last.nextSibling === n) {
+            inlineGroup.nodes.push(n);
+          } else {
+            flushInline();
+            inlineGroup = { parent, nodes: [n] };
+          }
+        }
+
+        // If we included an element node, skip its descendants to avoid
+        // double-including children.
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          const next = walker.nextSibling();
+          n = next;
+          if (!n) break;
+          if (n === end) {
+            // continue loop to allow finalization
+          }
+          continue;
+        }
+      }
+    }
+
+    if (n === end) break;
+    n = walker.nextNode();
+  }
+
+  flushInline();
+  return actions;
 }
 
 function wrapInlineChildren(parent: Node, color: string, id: string) {
@@ -827,4 +898,3 @@ export function removeHighlights(container: HTMLElement, id: string): void {
     parent.removeChild(span);
   });
 }
-

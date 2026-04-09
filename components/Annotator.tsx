@@ -15,14 +15,13 @@ import { findBestContentNode, awaitDomSettled, trackScriptExecution } from '@/ut
 import { highlightAnnotations } from '@/utils/annotations';
 
 type AnnotatorProps = {
-  annotations: AnnotationItem[];
+  annotations: Annotation[];
   title: string;
-  remoteScriptCount: number;
   pageUrl: string;
   iframeUrl: string;
 }
 
-export default function Annotator({ annotations, title, remoteScriptCount, pageUrl, iframeUrl }: AnnotatorProps) {
+export default function Annotator({ annotations, title, pageUrl, iframeUrl }: AnnotatorProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showPasteHTML, setShowPasteHTML] = useState(false);
   const [iframeReady, setIframeReady] = useState(false);
@@ -66,8 +65,7 @@ export default function Annotator({ annotations, title, remoteScriptCount, pageU
     }
 
     await awaitDomSettled(iframe);
-
-    trackScriptExecution(iframe, remoteScriptCount);
+    trackScriptExecution(iframe);
 
     const id = 'annotation-highlight-styles';
     const doc = iframe.contentDocument as Document;
@@ -85,8 +83,8 @@ export default function Annotator({ annotations, title, remoteScriptCount, pageU
 
     }
 
-    highlightAnnotations(annotations, iframe.contentDocument?.body as HTMLElement);
     contentRef.current = findBestContentNode(iframe.contentDocument?.body as HTMLElement);
+    highlightAnnotations(annotations, contentRef.current);
     setIframeReady(true);
   }
 

@@ -10,16 +10,6 @@ export interface Page {
   updated_at: string;
 }
 
-export interface Annotation {
-  id: string;
-  page_id: string;
-  text: string;
-  html: string | null;
-  color: string;
-  comment: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 export async function generatePageId(url: string): Promise<string> {
   const data = new TextEncoder().encode(url);

@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useContext } from "react";
+import React, { useCallback, useState } from "react";
 import PromptBox from './PromptBox';
 import Latex from "./Latex";
 import CommentEditor from "./CommentEditor";
@@ -6,7 +6,7 @@ import EmptyState from "./EmptyState";
 import { useAnnotationContextOptional } from "../context/Annotator.context";
 import { useCommentEditing } from "../hooks/AnnotationList.hooks";
 import styles from "../styles/AnnotationList.styles";
-import { shortenedHtml } from "../utils/dom";
+import { shortenHtml } from "../utils/dom";
 
 
 export default function AnnotationList({
@@ -22,7 +22,7 @@ export default function AnnotationList({
 }: {
   scrollToAnnotation?: (id: string) => void;
   mode?: 'compact' | 'card';
-  annotations?: AnnotationItem[];
+  annotations?: Annotation[];
   onDeleteAnnotation?: (id: string) => void;
   onUpdateComment?: (id: string, comment: string) => void;
   editingComment?: { annotationId: string; comment: string } | null;
@@ -103,7 +103,7 @@ export default function AnnotationList({
         <EmptyState />
       ) : (
         <div style={mode === 'card' ? styles.annotationsWrapper : undefined}>
-          {annotations.map((ann: AnnotationItem) => (
+          {annotations.map((ann: Annotation) => (
             <div key={ann.id}>
               {mode === 'compact' ? (
                 // Compact mode (Sidebar)
@@ -125,7 +125,7 @@ export default function AnnotationList({
                     />
                     <div>
                       <Latex>
-                        {shortenedHtml(ann.html ?? "No html")}
+                        {shortenHtml(ann.html ?? "No html")}
                       </Latex>
                       {ann.comment && (
                         <div style={styles.comment}>

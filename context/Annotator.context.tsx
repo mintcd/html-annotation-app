@@ -7,7 +7,7 @@ import { createAnnotation, updateAnnotation as updateAnnotationAPI, deleteAnnota
 
 type AnnotationContextProps = {
   children: ReactNode;
-  initialAnnotations?: AnnotationItem[];
+  initialAnnotations?: Annotation[];
   pageUrl: string;
   title?: string;
   contentRef: React.RefObject<HTMLElement>;
@@ -21,12 +21,12 @@ type AnnotationContextType = {
   contentRef: React.RefObject<HTMLElement>;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   iframeReady: boolean;
-  annotations: AnnotationItem[];
+  annotations: Annotation[];
   pageUrl?: string;
   title?: string;
   currentHighlightColor: string;
   setCurrentHighlightColor: React.Dispatch<React.SetStateAction<string>>;
-  addAnnotation: (text: string, html: string, color: string) => Promise<{ tempId: string; promise: Promise<string> }>;
+  addAnnotation: (payload: { text: string, html: string, color: string, path?: number[] | null }) => Promise<{ tempId: string; promise: Promise<string> }>;
   deleteAnnotation: (id: string) => void;
   updateAnnotation: (params: { id: string; comment?: string; color?: string; text?: string; html?: string }) => void;
   syncStatus: 'synced' | 'syncing' | 'to-sync';
@@ -56,22 +56,24 @@ export function AnnotationContext({
   iframeRef,
   iframeReady,
 }: AnnotationContextProps) {
-  const [annotations, setAnnotations] = useState<AnnotationItem[]>(initialAnnotations);
+  const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [currentHighlightColor, setCurrentHighlightColor] = useState<string>("#87ceeb");
-  const [pendingOperations, setPendingOperations] = useState<Array<{ type: 'create' | 'update' | 'delete', annotation: AnnotationItem }>>([]);
+  const [pendingOperations, setPendingOperations] = useState<Array<{ type: 'create' | 'update' | 'delete', annotation: Annotation }>>([]);
   const [lastAutoSaveStatus, setLastAutoSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const addAnnotation = useCallback(async (text: string, html: string, color: string): Promise<{ tempId: string; promise: Promise<string> }> => {
+  const addAnnotation = useCallback(async (payload: { text: string, html: string, color: string, path?: number[] | null }): Promise<{ tempId: string; promise: Promise<string> }> => {
+    const { text, html, color, path } = payload;
     const tempId = `temp-${Date.now()}`;
-    const now = Date.now();
-    const tempAnnotation: AnnotationItem = {
+    const now = Date.now().toString();
+    const tempAnnotation: Annotation = {
+      page_id: pageUrl,
       id: tempId,
       text,
       color,
-      created: now,
-      lastModified: now,
+      created_at: now,
+      updated_at: now,
       html,
     };
     // Add temporary annotation to show immediately in UI
@@ -90,16 +92,14 @@ export function AnnotationContext({
         }
 
         // Create annotation and get server-generated ID, including color
-        const serverAnnotation = await createAnnotation(pageUrl, text, html, color);
+        const serverAnnotation = await createAnnotation({ url: pageUrl, text, html, color, path: path ?? null });
 
         // Replace temp annotation with server annotation (with proper ID)
         setAnnotations(prev => prev.map(ann =>
           ann.id === tempId ? {
             ...ann,
             id: serverAnnotation.id,
-            color: serverAnnotation.color, // Use color from server
-            created: new Date(serverAnnotation.created_at).getTime(),
-            lastModified: new Date(serverAnnotation.updated_at).getTime(),
+            color: serverAnnotation.color,
           } : ann
         ));
 
@@ -147,12 +147,12 @@ export function AnnotationContext({
       });
     }
 
-    let currentAnnotation: AnnotationItem | undefined;
+    let currentAnnotation: Annotation | undefined;
 
     setAnnotations(prev => prev.map(ann => {
       if (ann.id !== id) return ann;
       currentAnnotation = ann; // Capture current annotation before update
-      const updated: AnnotationItem = { ...ann, lastModified: Date.now() } as AnnotationItem;
+      const updated: Annotation = { ...ann, lastModified: Date.now() } as Annotation;
       if (comment !== undefined) updated.comment = comment.trim() || undefined;
       if (color !== undefined) updated.color = color;
       if (text !== undefined) updated.text = text;
@@ -167,7 +167,7 @@ export function AnnotationContext({
         const updatedHtml = html !== undefined ? html : undefined;
         const updatedColor = color !== undefined ? color : undefined;
         const updatedComment = comment !== undefined ? (comment.trim() || undefined) : undefined;
-        await updateAnnotationAPI(id, updatedText, updatedHtml, updatedColor, updatedComment);
+        await updateAnnotationAPI(id, { text: updatedText, html: updatedHtml, color: updatedColor, comment: updatedComment });
         setLastAutoSaveStatus({ success: true, message: "Annotation updated" });
       }
     } catch (error) {

@@ -1,12 +1,25 @@
 import { useMobile, useElementWidth } from "../hooks";
+import { useAnnotationContext } from "../context/Annotator.context";
 
 export default function useMenuOnRangeStyles(ref: React.RefObject<HTMLElement | null>, range: Range | null) {
   const { isMobile } = useMobile();
   const menuWidth = useElementWidth(ref, range);
+  const { iframeRef } = useAnnotationContext();
 
   const position = range ? (() => {
     try {
       const rec = range.getBoundingClientRect();
+      // If selection comes from inside an iframe, range rect is relative to
+      // the iframe's viewport. Translate into the parent viewport by adding
+      // the iframe element's bounding rect so the fixed menu lines up.
+      const iframeEl = iframeRef?.current;
+      if (iframeEl) {
+        const iframeRect = iframeEl.getBoundingClientRect();
+        return {
+          top: iframeRect.top + rec.bottom + 10,
+          left: iframeRect.left + rec.left + (rec.width / 2) - (menuWidth / 2),
+        };
+      }
       return {
         top: rec.bottom + 10,
         left: rec.left + (rec.width / 2) - (menuWidth / 2),

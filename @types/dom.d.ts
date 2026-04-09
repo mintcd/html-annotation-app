@@ -1,0 +1,1 @@
+type TextPosition = { node: Text; offset: number; char: string };

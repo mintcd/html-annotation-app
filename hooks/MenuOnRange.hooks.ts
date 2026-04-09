@@ -120,9 +120,8 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
     const iframeWin = iframeRef.current?.contentWindow;
     const sel = (iframeWin ?? window).getSelection();
     if (sel) sel.removeAllRanges();
-
     // Create annotation and get temp ID immediately
-    const { tempId, promise } = await addAnnotation(text, html, currentHighlightColor);
+    const { tempId, promise } = await addAnnotation({ text: text, html: html, color: currentHighlightColor });
 
     // Highlight with temp ID immediately
     highlightRange(range, currentHighlightColor, tempId);

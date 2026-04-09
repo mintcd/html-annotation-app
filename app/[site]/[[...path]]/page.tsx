@@ -53,13 +53,12 @@ export default async function SitePage({
   const framePathname = path?.length ? path.join('/') : '';
   const frameUrl = `/_frame/${site}${framePathname ? '/' + framePathname : ''}${search}`;
   const annotations = await loadAnnotationsForPage(url);
-  const { title, numberOfScripts } = await getPageFromServer(url);
+  const { title } = await getPageFromServer(url);
 
   return (
     <Annotator
       annotations={annotations}
       title={title ?? ''}
-      remoteScriptCount={numberOfScripts}
       pageUrl={url}
       iframeUrl={frameUrl}
     />

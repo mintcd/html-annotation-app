@@ -3,7 +3,7 @@ import commentEditorStyles from "../styles/CommentEditor.styles";
 import { useAnnotationContext } from "../context/Annotator.context";
 
 type CommentEditorProps = {
-  ann: AnnotationItem;
+  ann: Annotation;
   commentDraft: string;
   setCommentDraft: (draft: string) => void;
   commentTextareaRef: React.RefObject<HTMLTextAreaElement>;

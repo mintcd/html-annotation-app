@@ -93,18 +93,20 @@ export async function getAnnotationsForPage(url: string): Promise<Annotation[]> 
   return await response.json();
 }
 
-export async function createAnnotation(
-  url: string,
-  text: string,
-  html?: string,
-  color?: string,
-  comment?: string,
-): Promise<Annotation> {
+export async function createAnnotation(params: {
+  url: string;
+  text: string;
+  html?: string;
+  color?: string;
+  comment?: string;
+  position?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number } | null;
+}): Promise<Annotation> {
+  const { url, text, html, color, comment, position } = params;
   const base = getBase();
   const response = await fetch(`${base}/api/annotations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, text, html, color, comment })
+    body: JSON.stringify({ url, text, html, color, comment, position })
   });
 
   if (!response.ok) {
@@ -116,16 +118,26 @@ export async function createAnnotation(
 
 export async function updateAnnotation(
   id: string,
-  text?: string,
-  html?: string,
-  color?: string,
-  comment?: string,
+  payload: {
+    text?: string;
+    html?: string | null;
+    color?: string;
+    comment?: string;
+    position?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number } | null;
+  }
 ): Promise<Annotation> {
   const base = getBase();
-  const response = await fetch(`${base}/api/annotations/${id}`, {
+  const response = await fetch(`${base}/api/annotations`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, text, html, color, comment })
+    body: JSON.stringify({
+      id,
+      text: payload.text,
+      html: payload.html,
+      color: payload.color,
+      comment: payload.comment,
+      position: payload.position,
+    })
   });
 
   if (!response.ok) {
