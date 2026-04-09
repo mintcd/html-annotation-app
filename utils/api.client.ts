@@ -20,7 +20,7 @@ export async function listPages(): Promise<Page[]> {
 
 export async function getPage(url: string): Promise<Page> {
   const base = getBase();
-  const response = await fetch(`${base}/api/pages?url=${url}`);
+  const response = await fetch(`${base}/api/pages?url=${encodeURIComponent(url)}`);
 
   if (response.ok) return await response.json();
   throw new Error(`Failed to get page: ${response.status}`);
@@ -69,10 +69,9 @@ export async function updatePage({ url, title, numberOfScripts }: {
 
 export async function deletePage(url: string): Promise<void> {
   const base = getBase();
-  const response = await fetch(`${base}/api/pages?url=${url}`, {
+  const response = await fetch(`${base}/api/pages?url=${encodeURIComponent(url)}`, {
     method: 'DELETE'
   });
-
   if (!response.ok) {
     throw new Error(`Failed to delete page: ${response.status}`);
   }
@@ -82,7 +81,7 @@ export async function deletePage(url: string): Promise<void> {
 
 export async function getAnnotationsForPage(url: string): Promise<Annotation[]> {
   const base = getBase();
-  const response = await fetch(`${base}/api/annotations?url=${url}`, {
+  const response = await fetch(`${base}/api/annotations?url=${encodeURIComponent(url)}`, {
     cache: 'no-store'
   });
 

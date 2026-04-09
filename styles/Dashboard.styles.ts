@@ -294,7 +294,6 @@ export default {
   actionButtons: {
     marginTop: '0.75rem',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'flex-start',
     gap: '0.5rem',
   },
@@ -308,7 +307,6 @@ export default {
     fontSize: '0.75rem',
     fontWeight: 500,
     borderRadius: '0.375rem',
-    textDecoration: 'none',
   },
 
   viewPageButtonHover: {
@@ -324,7 +322,6 @@ export default {
     fontSize: '0.75rem',
     fontWeight: 500,
     borderRadius: '0.375rem',
-    border: 'none',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
   }),

@@ -654,7 +654,7 @@ export function getRangeByText(root: HTMLElement, searchText: string): {
 }
 
 export function getRangeByPosition(root: HTMLElement, searchText: string, rangePosition: { startPosition: number, endPosition: number, startOffset: number, endOffset: number }): Range | null {
-  console.log('Attempting position-based range retrieval with', rangePosition);
+  // console.log('Attempting position-based range retrieval with', rangePosition);
   if (!searchText || !searchText.trim()) throw new Error("Search text must be non-empty");
 
   const pat = searchText.replace(/\s/g, '');
@@ -674,16 +674,12 @@ export function getRangeByPosition(root: HTMLElement, searchText: string, rangeP
 
   console.log('Position range matches search text, building Range');
 
-  // Build Range using provided offsets. The stored offsets are expected to
-  // match the node offsets used when the positions were recorded (startOffset
-  // is the offset into the start text node; endOffset is the exclusive end
-  // offset for the end text node).
   const startNode = positions[startPosition].node;
   const endNode = positions[endPosition].node;
-
   const range = ownerDoc.createRange();
   range.setStart(startNode, startOffset);
   range.setEnd(endNode, endOffset);
+
   return range;
 }
 

@@ -63,8 +63,8 @@ export function AnnotationContext({
   const [isSyncing, setIsSyncing] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const addAnnotation = useCallback(async (payload: { text: string, html: string, color: string, path?: number[] | null }): Promise<{ tempId: string; promise: Promise<string> }> => {
-    const { text, html, color, path } = payload;
+  const addAnnotation = useCallback(async (payload: { text: string, html: string, color: string, position?: { startPosition: number, endPosition: number, startOffset: number, endOffset: number } }): Promise<{ tempId: string; promise: Promise<string> }> => {
+    const { text, html, color, position } = payload;
     const tempId = `temp-${Date.now()}`;
     const now = Date.now().toString();
     const tempAnnotation: Annotation = {
@@ -92,7 +92,7 @@ export function AnnotationContext({
         }
 
         // Create annotation and get server-generated ID, including color
-        const serverAnnotation = await createAnnotation({ url: pageUrl, text, html, color, path: path ?? null });
+        const serverAnnotation = await createAnnotation({ url: pageUrl, text, html, color, position });
 
         // Replace temp annotation with server annotation (with proper ID)
         setAnnotations(prev => prev.map(ann =>

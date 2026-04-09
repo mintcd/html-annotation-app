@@ -638,16 +638,6 @@ export default function Dashboard() {
                 <h2 style={styles.pageTitle}>
                   {displayedPage?.title ?? displayedUrl}
                 </h2>
-                <a
-                  href={displayedUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={styles.pageUrl}
-                  onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                  onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
-                >
-                  {displayedUrl}
-                </a>
                 <div style={styles.pageMeta}>
                   {displayedPage.annotations.length} annotation{displayedPage.annotations.length !== 1 ? 's' : ''}
                   {' • '}

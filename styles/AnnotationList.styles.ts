@@ -3,7 +3,9 @@ const annotationListStyles = {
     overflowY: 'auto' as const,
     padding: '0.5rem',
     touchAction: 'pan-y',
-    overscrollBehavior: 'contain',
+    // Allow natural scroll chaining so parent scroll can continue when
+    // the inner list is at its scroll edge (prevents "pointer inside list disables scroll").
+    overscrollBehavior: 'auto',
   },
 
   annotationsWrapper: {
