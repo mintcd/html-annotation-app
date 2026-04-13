@@ -3,6 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "predev": "npm run build:sw",
+    "build:sw": "tsc --lib ES2022,WebWorker public/sw.ts",
     "dev": "vinext dev --port 5000 --host 0.0.0.0",
     "build": "vinext build",
     "deploy": "vinext deploy",

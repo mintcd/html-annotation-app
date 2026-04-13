@@ -4,23 +4,23 @@ import { useEffect } from 'react';
 
 export default function ServiceWorkerRegister() {
   useEffect(() => {
-    // Unregister any existing service workers
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => {
-          registration.unregister();
-          console.log('Service worker unregistered');
-        });
-      });
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
-      // Clear all caches
-      caches.keys().then((cacheNames) => {
-        cacheNames.forEach((cacheName) => {
-          caches.delete(cacheName);
-          console.log('Cache deleted:', cacheName);
-        });
-      });
+    let mounted = true;
+
+    async function registerSW() {
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        if (!mounted) return;
+        console.log('Service worker registered:', registration);
+      } catch (e) {
+        console.warn('Service worker registration failed:', e);
+      }
     }
+
+    registerSW();
+
+    return () => { mounted = false; };
   }, []);
 
   return null;

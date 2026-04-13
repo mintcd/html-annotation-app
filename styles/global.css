@@ -40,3 +40,17 @@ body {
   padding-right: 1px;
   border-radius: 3px;
 }
+
+/* Device-aware overscroll behavior for the inner annotation list.
+   Mouse/trackpad: allow scroll chaining so parent can continue scrolling.
+   Touch (mobile): contain overscroll to avoid parent scroll when reaching edges. */
+.annotation-list-container {
+  overscroll-behavior: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (pointer: coarse) {
+  .annotation-list-container {
+    overscroll-behavior: contain;
+  }
+}

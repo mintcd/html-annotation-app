@@ -2,25 +2,44 @@ import { listPages, getAnnotationsForPage, updateAnnotation } from './api.client
 import { getRange, highlightRange } from './dom';
 
 export async function highlightAnnotations(annotations: Annotation[], container: HTMLElement) {
-  // Process sequentially to avoid DOM mutations from earlier highlights
+  // Compute ranges for all annotations first (no DOM mutations yet).
+  const prepared: Array<{
+    ann: Annotation;
+    range: Range;
+    usedPosition: boolean;
+    resolvedPosition?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number };
+  }> = [];
+
   for (const ann of annotations) {
     try {
       const result = getRange(container, ann.text, ann.position);
-      const range = result.range;
-      highlightRange(range, ann.color || '#ffff00', ann.id);
-
-      // If we fell back to full-text match and received a canonical position,
-      // persist it to the server so future loads can use the fast position lookup.
-      if (!result.usedPosition && result.resolvedPosition) {
-        try {
-          console.log(`Persisting resolved position for annotation ${ann.id}`, result.resolvedPosition);
-          await updateAnnotation(ann.id, { position: result.resolvedPosition });
-        } catch (e) {
-          console.error('Failed to persist annotation position:', e);
-        }
-      }
+      prepared.push({ ann, range: result.range, usedPosition: result.usedPosition, resolvedPosition: result.resolvedPosition });
     } catch (e) {
       console.warn('Failed to match annotation:', ann.id, e);
+    }
+  }
+
+  // Persist any resolved positions before we mutate the DOM (so offsets stay valid).
+  await Promise.all(prepared.map(async (p) => {
+    if (!p.usedPosition && p.resolvedPosition) {
+      try {
+        console.log(`Persisting resolved position for annotation ${p.ann.id}`, p.resolvedPosition);
+        await updateAnnotation(p.ann.id, { position: p.resolvedPosition });
+      } catch (e) {
+        console.error('Failed to persist annotation position:', e);
+      }
+    }
+  }));
+
+  // Highlight from the end of the document backwards so earlier mutations
+  // don't shift the positions of later ranges.
+  prepared.sort((a, b) => -a.range.compareBoundaryPoints(Range.START_TO_START, b.range));
+
+  for (const p of prepared) {
+    try {
+      highlightRange(p.range, p.ann.color || '#ffff00', p.ann.id);
+    } catch (e) {
+      console.warn('Failed to highlight annotation:', p.ann.id, e);
     }
   }
 }

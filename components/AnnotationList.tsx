@@ -91,7 +91,7 @@ export default function AnnotationList({
   }, [contextData]);
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} className="annotation-list-container">
       {prompt && (
         <PromptBox
           message={prompt.message}

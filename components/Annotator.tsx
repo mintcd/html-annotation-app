@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useState, type RefObject } from 'react';
+import { useRef, useCallback, useState, type RefObject, useEffect } from 'react';
 import { useClickHref } from '../hooks/Annotator.hooks';
 import { AnnotationContext } from '../context/Annotator.context';
 import Sidebar from './Sidebar';
@@ -10,9 +10,11 @@ import PromptBox from './PromptBox';
 import PasteHTML from './PasteHTML';
 import annotationStyles from "../styles/Annotator.styles";
 import Loader from './Loader';
-import { getPage, updatePage } from '@/utils/api.client';
+import { getPage, updatePage, createPage, getOrCreateWebsite } from '@/utils/api.client';
 import { findBestContentNode, awaitDomSettled, trackScriptExecution } from '@/utils/dom';
+import { normalizeUrl } from '@/utils/url';
 import { highlightAnnotations } from '@/utils/annotations';
+import ClientFrame from './ClientFrame';
 
 type AnnotatorProps = {
   annotations: Annotation[];
@@ -26,6 +28,7 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
   const [showPasteHTML, setShowPasteHTML] = useState(false);
   const [iframeReady, setIframeReady] = useState(false);
   const [iframeError, setIframeError] = useState("");
+  const [_title, setTitle] = useState(title);
 
   // Parse site and path from iframeUrl: /_frame/<site>/<path...>
   const iframePathParts = iframeUrl.replace(/^\/+_frame\//, '').split('?')[0].split('/');
@@ -34,11 +37,39 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const closeModal = useCallback(() => setPendingHref(null), []);
 
-  const openAnnotator = useCallback((href: string) => {
-    const annotatorUrl = new URL('/annotation', window.location.origin);
-    annotatorUrl.searchParams.set('url', href);
-    window.open(annotatorUrl.toString(), '_blank', 'noopener');
-    closeModal();
+  const openAnnotator = useCallback(async (href: string) => {
+    try {
+      const normalized = normalizeUrl(href);
+
+      // Ensure page exists; create if missing
+      try {
+        await getPage(normalized);
+      } catch {
+        await createPage({ url: normalized });
+      }
+
+      // Ensure website (site slug) exists
+      const origin = new URL(normalized).origin;
+      const website = await getOrCreateWebsite(origin);
+      const site = website.id;
+
+      const pathname = new URL(normalized).pathname; // e.g. '/' or '/path/to/page'
+      const pathPart = pathname === '/' ? '' : pathname;
+      const search = new URL(normalized).search || '';
+
+      const appPath = `/${site}${pathPart}${search}`;
+
+      // Navigate in the current tab (do not open a new tab)
+      window.location.href = appPath;
+    } catch (err) {
+      // Fallback to legacy behavior on error — navigate in current tab
+      console.error('Failed to open annotator path route, falling back', err);
+      const annotatorUrl = new URL('/annotation', window.location.origin);
+      annotatorUrl.searchParams.set('url', href);
+      window.location.href = annotatorUrl.toString();
+    } finally {
+      closeModal();
+    }
   }, [closeModal]);
 
   const openOriginal = useCallback((href: string) => {
@@ -57,6 +88,8 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
     if (title === '') {
       const docTitle = iframe.contentDocument?.title ?? '';
       console.log("No stored title, using document title", docTitle);
+      setTitle(docTitle);
+
       // Only update the page if it already exists; Dashboard creates pages.
       (async () => {
         const existing = await getPage(pageUrl);
@@ -88,19 +121,24 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
     setIframeReady(true);
   }
 
+  useEffect(() => {
+    setTitle(title);
+  }, [title]);
+
   return (
     <>
-      <iframe
-        id="annotated-frame"
-        onLoad={(e) => initAnnotatedPage(e)}
-        onError={(e) => {
-          setIframeError("Failed to load page");
-          setShowPasteHTML(true);
+      <ClientFrame
+        frameUrl={iframeUrl}
+        frameRef={iframeRef}
+        iframeProps={{
+          id: 'annotated-frame',
+          onLoad: (e: React.SyntheticEvent<HTMLIFrameElement>) => initAnnotatedPage(e),
+          onError: (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+            setIframeError('Failed to load page');
+            setShowPasteHTML(true);
+          },
+          style: { width: '100%', height: '100vh', border: 'none', display: 'block' },
         }}
-        ref={iframeRef}
-        src={iframeUrl}
-        style={{ width: '100%', height: '100vh', border: 'none', display: 'block' }}
-        title={title || 'Annotated page'}
       />
       <AnnotationContext
         initialAnnotations={annotations}
@@ -108,6 +146,7 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
         pageUrl={pageUrl}
         contentRef={contentRef as React.RefObject<HTMLElement>}
         iframeRef={iframeRef as React.RefObject<HTMLIFrameElement>}
+        iframeUrl={iframeUrl}
         iframeReady={iframeReady}
       >
         <Sidebar onPasteHTML={handlePasteHTML} />

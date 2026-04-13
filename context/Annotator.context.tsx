@@ -13,6 +13,8 @@ type AnnotationContextProps = {
   contentRef: React.RefObject<HTMLElement>;
   /** Ref to the <iframe> element, when content is rendered inside one. */
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  /** The iframe URL used to render the page (/_frame/slug/...) */
+  iframeUrl?: string;
   /** True once the iframe has finished loading its real content. */
   iframeReady: boolean;
 };
@@ -22,6 +24,7 @@ type AnnotationContextType = {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   iframeReady: boolean;
   annotations: Annotation[];
+  iframeUrl?: string;
   pageUrl?: string;
   title?: string;
   currentHighlightColor: string;
@@ -54,6 +57,7 @@ export function AnnotationContext({
   title,
   contentRef,
   iframeRef,
+  iframeUrl,
   iframeReady,
 }: AnnotationContextProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
@@ -189,6 +193,7 @@ export function AnnotationContext({
     iframeRef,
     iframeReady,
     annotations,
+    iframeUrl,
     pageUrl,
     title,
     currentHighlightColor,

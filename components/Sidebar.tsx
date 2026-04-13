@@ -3,18 +3,20 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAnnotationContext } from "../context/Annotator.context";
+import { prefetchResourcesForUrl } from '@/utils/frameCache';
 import { useMobile, useHotkey } from "../hooks";
 import { useResize, useClickOutside, useMobileToggle, usePreventScroll } from "../hooks/Sidebar.hooks";
 import AnnotationList from "./AnnotationList";
 import { sortAnnotations, sortOptions } from "../utils/annotations";
 import type { SortOption } from "../utils/annotations";
-import { BoxList, Sort, PasteHtml } from "../app/icons";
+import { BoxList, Sort, PasteHtml, Refresh } from "../app/icons";
 import Dropdown from "./Dropdown";
 import { escapeAttrValue } from "../utils/string";
 import styles from "../styles/Sidebar.styles";
 
 export default function Sidebar({ onPasteHTML }: { onPasteHTML?: () => void }) {
-  const { annotations, syncStatus, contentRef } = useAnnotationContext()
+  const { annotations, syncStatus, contentRef, iframeRef, pageUrl, title, iframeReady, iframeUrl } = useAnnotationContext();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('dom-order');
   const items = useMemo(() => sortAnnotations(annotations, sortOption), [annotations, sortOption]);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -129,6 +131,25 @@ export default function Sidebar({ onPasteHTML }: { onPasteHTML?: () => void }) {
                   <PasteHtml size={14} />
                 </button>
               )}
+              <button
+                onClick={async () => {
+                  try {
+                    setIsRefreshing(true);
+                    const target = iframeRef?.current?.src || iframeUrl || pageUrl || window.location.href;
+                    await prefetchResourcesForUrl(target);
+                    try { console.log('[prefetch] refreshed resources for', target); } catch (e) { }
+                  } catch (e) {
+                    console.error('Refresh failed', e);
+                    alert('Failed to refresh resources');
+                  } finally {
+                    setIsRefreshing(false);
+                  }
+                }}
+                title="Refresh resources"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', color: 'inherit', opacity: 0.8, marginLeft: 8 }}
+              >
+                {isRefreshing ? <span style={{ fontSize: 12 }}>Refreshing…</span> : <Refresh size={16} />}
+              </button>
             </span>
           </div>
           {isMobile || !onPointerDown ? null : (
