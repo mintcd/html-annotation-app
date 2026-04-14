@@ -13,7 +13,7 @@ import Loader from './Loader';
 import repository from '../utils/repository';
 import { eq } from '../utils/QueryBuilder';
 import { findBestContentNode, awaitDomSettled, trackScriptExecution } from '@/utils/dom';
-import { normalizeUrl } from '@/utils/url';
+import { normalizeUrl, originToSlug } from '@/utils/url';
 import { highlightAnnotations } from '@/utils/annotations';
 import ClientFrame from './ClientFrame';
 
@@ -39,43 +39,32 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
   const closeModal = useCallback(() => setPendingHref(null), []);
 
   const openAnnotator = useCallback(async (href: string) => {
-    try {
-      const normalized = normalizeUrl(href);
+    const normalized = normalizeUrl(href);
 
-      // Ensure page exists; create if missing
-      const pages: any[] = await repository.select('id','url').from('pages').where(eq('url', normalized));
-      if (!pages || pages.length === 0) {
-        await repository.insert({ url: normalized, title: '', number_of_scripts: 0, created_at: Date.now(), updated_at: Date.now() }).from('pages');
-      }
-
-      // Ensure website (site slug) exists
-      const origin = new URL(normalized).origin;
-      let websites: any[] = await repository.select('id','origin').from('websites').where(eq('origin', origin));
-      let website = websites && websites.length ? websites[0] : null;
-      if (!website) {
-        await repository.insert({ origin, created_at: Date.now(), updated_at: Date.now() }).from('websites');
-        websites = await repository.select('id','origin').from('websites').where(eq('origin', origin));
-        website = websites[0];
-      }
-      const site = website.id;
-
-      const pathname = new URL(normalized).pathname; // e.g. '/' or '/path/to/page'
-      const pathPart = pathname === '/' ? '' : pathname;
-      const search = new URL(normalized).search || '';
-
-      const appPath = `/${site}${pathPart}${search}`;
-
-      // Navigate in the current tab (do not open a new tab)
-      window.location.href = appPath;
-    } catch (err) {
-      // Fallback to legacy behavior on error — navigate in current tab
-      console.error('Failed to open annotator path route, falling back', err);
-      const annotatorUrl = new URL('/annotation', window.location.origin);
-      annotatorUrl.searchParams.set('url', href);
-      window.location.href = annotatorUrl.toString();
-    } finally {
-      closeModal();
+    // Ensure page exists; create if missing
+    const pages: any[] = await repository.select('id', 'url').from('pages').where(eq('url', normalized));
+    if (!pages || pages.length === 0) {
+      await repository.insert({ url: normalized, title: '', number_of_scripts: 0, created_at: Date.now(), updated_at: Date.now() }).from('pages');
     }
+
+    // Ensure website (site slug) exists
+    const origin = new URL(normalized).origin;
+    let websites: any[] = await repository.select('id', 'origin').from('websites').where(eq('origin', origin));
+    let website = websites && websites.length ? websites[0] : null;
+    if (!website) {
+      const slug = originToSlug(origin);
+      await repository.insert({ id: slug, origin, created_at: Date.now(), updated_at: Date.now() }).from('websites');
+      websites = await repository.select('id', 'origin').from('websites').where(eq('origin', origin));
+      website = websites[0];
+    }
+    const site = website.id;
+
+    const pathname = new URL(normalized).pathname; // e.g. '/' or '/path/to/page'
+    const pathPart = pathname === '/' ? '' : pathname;
+    const search = new URL(normalized).search || '';
+
+    const appPath = `/${site}${pathPart}${search}`;
+    window.location.href = appPath;
   }, [closeModal]);
 
   const openOriginal = useCallback((href: string) => {
@@ -98,7 +87,7 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
 
       // Only update the page if it already exists; Dashboard creates pages.
       (async () => {
-        const pages: any[] = await repository.select('id','title').from('pages').where(eq('url', pageUrl));
+        const pages: any[] = await repository.select('id', 'title').from('pages').where(eq('url', pageUrl));
         const existing = pages && pages.length ? pages[0] : null;
         if (existing) await repository.update({ title: docTitle }).from('pages').where(eq('url', pageUrl));
       })();
