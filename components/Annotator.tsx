@@ -10,7 +10,8 @@ import PromptBox from './PromptBox';
 import PasteHTML from './PasteHTML';
 import annotationStyles from "../styles/Annotator.styles";
 import Loader from './Loader';
-import { getPage, updatePage, createPage, getOrCreateWebsite } from '@/utils/api.client';
+import repository from '../utils/repository';
+import { eq } from '../utils/QueryBuilder';
 import { findBestContentNode, awaitDomSettled, trackScriptExecution } from '@/utils/dom';
 import { normalizeUrl } from '@/utils/url';
 import { highlightAnnotations } from '@/utils/annotations';
@@ -42,15 +43,20 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
       const normalized = normalizeUrl(href);
 
       // Ensure page exists; create if missing
-      try {
-        await getPage(normalized);
-      } catch {
-        await createPage({ url: normalized });
+      const pages: any[] = await repository.select('id','url').from('pages').where(eq('url', normalized));
+      if (!pages || pages.length === 0) {
+        await repository.insert({ url: normalized, title: '', number_of_scripts: 0, created_at: Date.now(), updated_at: Date.now() }).from('pages');
       }
 
       // Ensure website (site slug) exists
       const origin = new URL(normalized).origin;
-      const website = await getOrCreateWebsite(origin);
+      let websites: any[] = await repository.select('id','origin').from('websites').where(eq('origin', origin));
+      let website = websites && websites.length ? websites[0] : null;
+      if (!website) {
+        await repository.insert({ origin, created_at: Date.now(), updated_at: Date.now() }).from('websites');
+        websites = await repository.select('id','origin').from('websites').where(eq('origin', origin));
+        website = websites[0];
+      }
       const site = website.id;
 
       const pathname = new URL(normalized).pathname; // e.g. '/' or '/path/to/page'
@@ -92,8 +98,9 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
 
       // Only update the page if it already exists; Dashboard creates pages.
       (async () => {
-        const existing = await getPage(pageUrl);
-        if (existing) await updatePage({ url: pageUrl, title: docTitle });
+        const pages: any[] = await repository.select('id','title').from('pages').where(eq('url', pageUrl));
+        const existing = pages && pages.length ? pages[0] : null;
+        if (existing) await repository.update({ title: docTitle }).from('pages').where(eq('url', pageUrl));
       })();
     }
 

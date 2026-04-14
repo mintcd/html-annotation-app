@@ -3,7 +3,8 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useCallback, useState, useMemo, useRef } from "react";
 import { removeHighlights } from "../utils/dom";
-import { createAnnotation, updateAnnotation as updateAnnotationAPI, deleteAnnotation as deleteAnnotationAPI, getPage, updatePage } from "../utils/api.client";
+import repository from "../utils/repository";
+import { eq } from "../utils/QueryBuilder";
 
 type AnnotationContextProps = {
   children: ReactNode;
@@ -89,30 +90,22 @@ export function AnnotationContext({
         // Only update the page title if it already exists and we have a real title.
         // Dashboard is responsible for creating pages.
         if (title) {
-          const existingPage = await getPage(pageUrl);
+          const existingPages: any[] = await repository.select('id', 'title').from('pages').where(eq('url', pageUrl));
+          const existingPage = existingPages && existingPages.length ? existingPages[0] : null;
           if (existingPage && existingPage.title !== title) {
-            await updatePage({ url: pageUrl, title });
+            await repository.update({ title }).from('pages').where(eq('url', pageUrl));
           }
         }
 
-        // Create annotation and get server-generated ID, including color
-        const serverAnnotation = await createAnnotation({ url: pageUrl, text, html, color, position });
+        // Create annotation locally and queue for remote sync
+        await repository.insert({ id: tempId, page_id: pageUrl, text, html, color, created_at: Date.now(), updated_at: Date.now(), position }).from('annotations');
 
-        // Replace temp annotation with server annotation (with proper ID)
-        setAnnotations(prev => prev.map(ann =>
-          ann.id === tempId ? {
-            ...ann,
-            id: serverAnnotation.id,
-            color: serverAnnotation.color,
-          } : ann
-        ));
-
-        setLastAutoSaveStatus({ success: true, message: "Annotation created" });
-        return serverAnnotation.id;
+        setLastAutoSaveStatus({ success: true, message: "Annotation queued (offline-first)" });
+        return tempId;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         setLastAutoSaveStatus({ success: false, message: errorMessage });
-        console.error("Failed to create annotation:", error);
+        console.error("Failed to queue annotation:", error);
         // Remove temp annotation on failure
         setAnnotations(prev => prev.filter(ann => ann.id !== tempId));
         throw error;
@@ -127,14 +120,14 @@ export function AnnotationContext({
     removeHighlights(contentRef.current, id);
     setAnnotations(prev => prev.filter((a) => a.id !== id));
 
-    // Immediately delete from API
+    // Queue delete operation locally
     try {
-      await deleteAnnotationAPI(id);
-      setLastAutoSaveStatus({ success: true, message: "Annotation deleted" });
+      await repository.delete().from('annotations').where(eq('id', id));
+      setLastAutoSaveStatus({ success: true, message: "Annotation delete queued" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setLastAutoSaveStatus({ success: false, message: errorMessage });
-      console.error("Failed to delete annotation:", error);
+      console.error("Failed to queue delete annotation:", error);
     }
   }, [contentRef]);
 
@@ -167,17 +160,18 @@ export function AnnotationContext({
     // Immediately update in API
     try {
       if (currentAnnotation) {
-        const updatedText = text !== undefined ? text : undefined;
-        const updatedHtml = html !== undefined ? html : undefined;
-        const updatedColor = color !== undefined ? color : undefined;
-        const updatedComment = comment !== undefined ? (comment.trim() || undefined) : undefined;
-        await updateAnnotationAPI(id, { text: updatedText, html: updatedHtml, color: updatedColor, comment: updatedComment });
-        setLastAutoSaveStatus({ success: true, message: "Annotation updated" });
+        const changes: any = {};
+        if (text !== undefined) changes.text = text;
+        if (html !== undefined) changes.html = html;
+        if (color !== undefined) changes.color = color;
+        if (comment !== undefined) changes.comment = comment !== '' ? comment : null;
+        await repository.update({ ...(changes as any) }).from('annotations').where(eq('id', id));
+        setLastAutoSaveStatus({ success: true, message: "Annotation update queued" });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setLastAutoSaveStatus({ success: false, message: errorMessage });
-      console.error("Failed to update annotation:", error);
+      console.error("Failed to queue annotation update:", error);
     }
   }, [contentRef]);
 
