@@ -51,20 +51,46 @@ var _this = this;
 var CACHE_NAME = 'study-space-v1';
 var FRAMES_CACHE = 'frames-cache-v1';
 var SNAPSHOTS_CACHE = 'snapshots-cache-v1';
+var PRECACHE_URLS = ['/offline.html'];
 // Narrow the global `self` to a ServiceWorkerGlobalScope for service-worker-specific APIs
 var sw = self;
 sw.addEventListener('install', function (event) {
     console.log('Service worker installing');
-    // Ensure the worker activates immediately
-    try {
-        event.waitUntil(sw.skipWaiting());
-    }
-    catch (e) { /* ignore */ }
+    // Precache essential offline assets and activate immediately
+    event.waitUntil((function () { return __awaiter(_this, void 0, void 0, function () {
+        var cache, e_1, e_2;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    _a.trys.push([0, 3, , 4]);
+                    return [4 /*yield*/, caches.open(CACHE_NAME)];
+                case 1:
+                    cache = _a.sent();
+                    return [4 /*yield*/, cache.addAll(PRECACHE_URLS)];
+                case 2:
+                    _a.sent();
+                    return [3 /*break*/, 4];
+                case 3:
+                    e_1 = _a.sent();
+                    return [3 /*break*/, 4];
+                case 4:
+                    _a.trys.push([4, 6, , 7]);
+                    return [4 /*yield*/, sw.skipWaiting()];
+                case 5:
+                    _a.sent();
+                    return [3 /*break*/, 7];
+                case 6:
+                    e_2 = _a.sent();
+                    return [3 /*break*/, 7];
+                case 7: return [2 /*return*/];
+            }
+        });
+    }); })());
 });
 sw.addEventListener('activate', function (event) {
     var cacheWhitelist = [CACHE_NAME, FRAMES_CACHE, SNAPSHOTS_CACHE];
     event.waitUntil((function () { return __awaiter(_this, void 0, void 0, function () {
-        var keys, e_1, e_2;
+        var keys, e_3, e_4;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -83,12 +109,12 @@ sw.addEventListener('activate', function (event) {
                     _a.sent();
                     return [3 /*break*/, 6];
                 case 5:
-                    e_1 = _a.sent();
+                    e_3 = _a.sent();
                     return [3 /*break*/, 6];
                 case 6: return [3 /*break*/, 8];
                 case 7:
-                    e_2 = _a.sent();
-                    console.warn('SW activate cleanup failed', e_2);
+                    e_4 = _a.sent();
+                    console.warn('SW activate cleanup failed', e_4);
                     return [3 /*break*/, 8];
                 case 8: return [2 /*return*/];
             }
@@ -122,7 +148,7 @@ function openDB() {
 function getAllOperations() {
     var _this = this;
     return new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
-        var db, tx, store, req_2, e_3;
+        var db, tx, store, req_2, e_5;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -137,8 +163,8 @@ function getAllOperations() {
                     req_2.onerror = function () { return reject(req_2.error); };
                     return [3 /*break*/, 3];
                 case 2:
-                    e_3 = _a.sent();
-                    reject(e_3);
+                    e_5 = _a.sent();
+                    reject(e_5);
                     return [3 /*break*/, 3];
                 case 3: return [2 /*return*/];
             }
@@ -148,7 +174,7 @@ function getAllOperations() {
 function putOperation(op) {
     var _this = this;
     return new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
-        var db, tx, store, req_3, e_4;
+        var db, tx, store, req_3, e_6;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -163,8 +189,8 @@ function putOperation(op) {
                     req_3.onerror = function () { return reject(req_3.error); };
                     return [3 /*break*/, 3];
                 case 2:
-                    e_4 = _a.sent();
-                    reject(e_4);
+                    e_6 = _a.sent();
+                    reject(e_6);
                     return [3 /*break*/, 3];
                 case 3: return [2 /*return*/];
             }
@@ -173,7 +199,7 @@ function putOperation(op) {
 }
 function notifyClients(message) {
     return __awaiter(this, void 0, void 0, function () {
-        var clients, _i, clients_1, c, e_5;
+        var clients, _i, clients_1, c, e_7;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -190,7 +216,7 @@ function notifyClients(message) {
                     }
                     return [3 /*break*/, 3];
                 case 2:
-                    e_5 = _a.sent();
+                    e_7 = _a.sent();
                     return [3 /*break*/, 3];
                 case 3: return [2 /*return*/];
             }
@@ -214,7 +240,7 @@ function processPendingOperations() {
                     pending.sort(function (a, b) { return (Number(a.created_at) || 0) - (Number(b.created_at) || 0); });
                     batch = pending.slice(0, limit);
                     _loop_1 = function (op) {
-                        var body, url, db, rtx, store, req_4, e_6, body, body, url, db, rtx, store, req_5, e_7, id, e_8, err_1, e_9;
+                        var body, url, db, rtx, store, req_4, e_8, body, body, url, db, rtx, store, req_5, e_9, id, e_10, err_1, e_11;
                         return __generator(this, function (_b) {
                             switch (_b.label) {
                                 case 0:
@@ -265,7 +291,7 @@ function processPendingOperations() {
                                     url = _b.sent();
                                     return [3 /*break*/, 12];
                                 case 11:
-                                    e_6 = _b.sent();
+                                    e_8 = _b.sent();
                                     return [3 /*break*/, 12];
                                 case 12:
                                     body = __assign({ url: url }, (op.payload.changes || {}));
@@ -300,7 +326,7 @@ function processPendingOperations() {
                                     url = _b.sent();
                                     return [3 /*break*/, 22];
                                 case 21:
-                                    e_7 = _b.sent();
+                                    e_9 = _b.sent();
                                     return [3 /*break*/, 22];
                                 case 22: return [4 /*yield*/, fetch("/api/pages?url=".concat(encodeURIComponent(url || '')), { method: 'DELETE' })];
                                 case 23:
@@ -322,7 +348,7 @@ function processPendingOperations() {
                                     _b.sent();
                                     return [3 /*break*/, 29];
                                 case 28:
-                                    e_8 = _b.sent();
+                                    e_10 = _b.sent();
                                     return [3 /*break*/, 29];
                                 case 29: return [4 /*yield*/, notifyClients({ type: actions.updateRemoteResult, op: op })];
                                 case 30:
@@ -340,7 +366,7 @@ function processPendingOperations() {
                                     _b.sent();
                                     return [3 /*break*/, 35];
                                 case 34:
-                                    e_9 = _b.sent();
+                                    e_11 = _b.sent();
                                     return [3 /*break*/, 35];
                                 case 35: return [4 /*yield*/, notifyClients({ type: actions.updateRemoteError, op: op, error: String(err_1) })];
                                 case 36:
@@ -414,7 +440,7 @@ sw.addEventListener('message', function (event) {
     }
     if (data.type === actions.updateRemote) {
         (function () { return __awaiter(_this, void 0, void 0, function () {
-            var e_10;
+            var e_12;
             var _a;
             return __generator(this, function (_b) {
                 switch (_b.label) {
@@ -425,7 +451,7 @@ sw.addEventListener('message', function (event) {
                         _b.sent();
                         return [3 /*break*/, 3];
                     case 2:
-                        e_10 = _b.sent();
+                        e_12 = _b.sent();
                         try {
                             (_a = sw.registration.sync) === null || _a === void 0 ? void 0 : _a.register('annotation-sync');
                         }
@@ -451,10 +477,51 @@ sw.addEventListener('fetch', function (event) {
     if (request.method !== 'GET')
         return;
     var url = new URL(request.url);
+    // Navigation requests: network-first with offline fallback
+    if (request.mode === 'navigate' || ((request.headers.get('accept') || '').includes('text/html'))) {
+        event.respondWith((function () { return __awaiter(_this, void 0, void 0, function () {
+            var networkResponse, err_3, cache, cached, offline, e_13;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        _a.trys.push([0, 2, , 9]);
+                        return [4 /*yield*/, fetch(request)];
+                    case 1:
+                        networkResponse = _a.sent();
+                        return [2 /*return*/, networkResponse];
+                    case 2:
+                        err_3 = _a.sent();
+                        _a.label = 3;
+                    case 3:
+                        _a.trys.push([3, 7, , 8]);
+                        return [4 /*yield*/, caches.open(CACHE_NAME)];
+                    case 4:
+                        cache = _a.sent();
+                        return [4 /*yield*/, cache.match(request)];
+                    case 5:
+                        cached = _a.sent();
+                        if (cached)
+                            return [2 /*return*/, cached];
+                        return [4 /*yield*/, cache.match('/offline.html')];
+                    case 6:
+                        offline = _a.sent();
+                        if (offline)
+                            return [2 /*return*/, offline];
+                        return [3 /*break*/, 8];
+                    case 7:
+                        e_13 = _a.sent();
+                        return [3 /*break*/, 8];
+                    case 8: return [2 /*return*/, new Response('', { status: 503 })];
+                    case 9: return [2 /*return*/];
+                }
+            });
+        }); })());
+        return;
+    }
     // Snapshot-scoped asset proxy
     if (url.pathname.startsWith('/__snapshot_asset__/')) {
         event.respondWith((function () { return __awaiter(_this, void 0, void 0, function () {
-            var cache, direct, e_11, encoded, firstSlash, encodedUrl, originalUrl, cached, keys, _i, keys_1, k, e_12, e_13, e_14;
+            var cache, direct, e_14, encoded, firstSlash, encodedUrl, originalUrl, cached, keys, _i, keys_1, k, e_15, e_16, e_17;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -474,7 +541,7 @@ sw.addEventListener('fetch', function (event) {
                         }
                         return [3 /*break*/, 5];
                     case 4:
-                        e_11 = _a.sent();
+                        e_14 = _a.sent();
                         return [3 /*break*/, 5];
                     case 5:
                         encoded = url.pathname.replace(/^\/__snapshot_asset__\//, '');
@@ -521,18 +588,18 @@ sw.addEventListener('fetch', function (event) {
                         }
                         return [3 /*break*/, 14];
                     case 13:
-                        e_12 = _a.sent();
+                        e_15 = _a.sent();
                         return [3 /*break*/, 14];
                     case 14:
                         _a.trys.push([14, 16, , 17]);
                         return [4 /*yield*/, fetch(originalUrl || request.url)];
                     case 15: return [2 /*return*/, _a.sent()];
                     case 16:
-                        e_13 = _a.sent();
+                        e_16 = _a.sent();
                         return [2 /*return*/, new Response('', { status: 503 })];
                     case 17: return [3 /*break*/, 19];
                     case 18:
-                        e_14 = _a.sent();
+                        e_17 = _a.sent();
                         return [2 /*return*/, new Response('', { status: 503 })];
                     case 19: return [2 /*return*/];
                 }
@@ -543,7 +610,7 @@ sw.addEventListener('fetch', function (event) {
     // Prefer frames cache for proxied site assets
     if (url.pathname.startsWith('/_proxy/')) {
         event.respondWith((function () { return __awaiter(_this, void 0, void 0, function () {
-            var cache, direct, any, res, e_15, e_16;
+            var cache, direct, any, res, e_18, e_19;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -573,11 +640,11 @@ sw.addEventListener('fetch', function (event) {
                         _a.sent();
                         return [3 /*break*/, 8];
                     case 7:
-                        e_15 = _a.sent();
+                        e_18 = _a.sent();
                         return [3 /*break*/, 8];
                     case 8: return [2 /*return*/, res];
                     case 9:
-                        e_16 = _a.sent();
+                        e_19 = _a.sent();
                         return [2 /*return*/, fetch(request)];
                     case 10: return [2 /*return*/];
                 }
@@ -589,7 +656,7 @@ sw.addEventListener('fetch', function (event) {
     var staticExts = /\.(js|css|png|jpg|jpeg|gif|svg|woff|woff2)$/;
     if (url.pathname.startsWith('/_next/static/') || staticExts.test(url.pathname)) {
         event.respondWith((function () { return __awaiter(_this, void 0, void 0, function () {
-            var cached, response, cache, e_17, e_18;
+            var cached, response, cache, e_20, e_21;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -615,11 +682,11 @@ sw.addEventListener('fetch', function (event) {
                         _a.sent();
                         return [3 /*break*/, 7];
                     case 6:
-                        e_17 = _a.sent();
+                        e_20 = _a.sent();
                         return [3 /*break*/, 7];
                     case 7: return [2 /*return*/, response];
                     case 8:
-                        e_18 = _a.sent();
+                        e_21 = _a.sent();
                         return [2 /*return*/, new Response('', { status: 503 })];
                     case 9: return [2 /*return*/];
                 }

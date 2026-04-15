@@ -3,14 +3,21 @@
 const CACHE_NAME = 'study-space-v1';
 const FRAMES_CACHE = 'frames-cache-v1';
 const SNAPSHOTS_CACHE = 'snapshots-cache-v1';
+const PRECACHE_URLS = ['/offline.html'];
 
 // Narrow the global `self` to a ServiceWorkerGlobalScope for service-worker-specific APIs
 const sw = (self as unknown) as ServiceWorkerGlobalScope;
 
 sw.addEventListener('install', (event: ExtendableEvent) => {
   console.log('Service worker installing');
-  // Ensure the worker activates immediately
-  try { event.waitUntil(sw.skipWaiting()); } catch (e) { /* ignore */ }
+  // Precache essential offline assets and activate immediately
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.addAll(PRECACHE_URLS);
+    } catch (e) { /* ignore */ }
+    try { await sw.skipWaiting(); } catch (e) { /* ignore */ }
+  })());
 });
 
 sw.addEventListener('activate', (event: ExtendableEvent) => {
@@ -203,6 +210,26 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
+
+  // Navigation requests: network-first with offline fallback
+  if (request.mode === 'navigate' || ((request.headers.get('accept') || '').includes('text/html'))) {
+    event.respondWith((async () => {
+      try {
+        const networkResponse = await fetch(request);
+        return networkResponse;
+      } catch (err) {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          const offline = await cache.match('/offline.html');
+          if (offline) return offline;
+        } catch (e) { /* ignore */ }
+        return new Response('', { status: 503 });
+      }
+    })());
+    return;
+  }
 
   // Snapshot-scoped asset proxy
   if (url.pathname.startsWith('/__snapshot_asset__/')) {
