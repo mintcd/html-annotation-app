@@ -80,21 +80,26 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
     const iframe = e.currentTarget;
     console.log("Iframe loaded");
 
-    if (title === '') {
-      const docTitle = iframe.contentDocument?.title ?? '';
-      console.log("No stored title, using document title", docTitle);
-      setTitle(docTitle);
+    // Wait for the frame DOM and scripts to settle before reading the document title.
+    await awaitDomSettled(iframe);
+    trackScriptExecution(iframe);
 
-      // Only update the page if it already exists; Dashboard creates pages.
-      (async () => {
+    // If there is no stored title, try to use the document's title.
+    // Only set state and persist to DB when the document title is non-empty (avoid overwriting with blank).
+    if (title === '') {
+      const docTitle = (iframe.contentDocument?.title ?? '').trim();
+      console.log("No stored title, using document title", docTitle);
+      if (docTitle !== '') {
+        setTitle(docTitle);
+
+        // Only update the page if it already exists; Dashboard creates pages.
         const pages: any[] = await repository.select('id', 'title').from('pages').where(eq('url', pageUrl));
         const existing = pages && pages.length ? pages[0] : null;
         if (existing) await repository.update({ title: docTitle }).from('pages').where(eq('url', pageUrl));
-      })();
+      } else {
+        console.log('Document title empty; skipping DB update to avoid erasing stored title.');
+      }
     }
-
-    await awaitDomSettled(iframe);
-    trackScriptExecution(iframe);
 
     const id = 'annotation-highlight-styles';
     const doc = iframe.contentDocument as Document;
@@ -118,8 +123,8 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
   }
 
   useEffect(() => {
-    setTitle(title);
-  }, [title]);
+    document.title = _title ?? "Annotated page";
+  }, [_title]);
 
   return (
     <>
@@ -138,7 +143,7 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
       />
       <AnnotationContext
         initialAnnotations={annotations}
-        title={title}
+        title={_title}
         pageUrl={pageUrl}
         contentRef={contentRef as React.RefObject<HTMLElement>}
         iframeRef={iframeRef as React.RefObject<HTMLIFrameElement>}
