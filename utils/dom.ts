@@ -689,11 +689,22 @@ export function highlightRange(range: Range, color: string = "#ffff00", id?: str
   }
 
   // Split boundaries so the selected parts become whole text nodes
+  // Only split when the offset is strictly inside a text node. Splitting at
+  // offset 0 or at node length creates empty text nodes which later lead to
+  // empty highlighted spans.
   if (range.endContainer.nodeType === Node.TEXT_NODE) {
-    (range.endContainer as Text).splitText(range.endOffset);
+    const t = range.endContainer as Text;
+    const tv = t.nodeValue || '';
+    if (range.endOffset > 0 && range.endOffset < tv.length) {
+      t.splitText(range.endOffset);
+    }
   }
   if (range.startContainer.nodeType === Node.TEXT_NODE) {
-    (range.startContainer as Text).splitText(range.startOffset);
+    const t = range.startContainer as Text;
+    const tv = t.nodeValue || '';
+    if (range.startOffset > 0 && range.startOffset < tv.length) {
+      t.splitText(range.startOffset);
+    }
   }
   // Build ordered wrap actions between the split boundaries. Each action is
   // either a group of consecutive sibling inline nodes to wrap, or a block
@@ -845,6 +856,18 @@ function wrapNodes(nodes: Node[], color: string, id: string) {
 
   for (const node of nodes) {
     wrapper.appendChild(node);
+  }
+  // If the wrapper contains only whitespace text (no visible content),
+  // unwrap it to avoid creating tiny empty highlighted spans between blocks.
+  const text = (wrapper.textContent || '');
+  if (text.trim().length === 0) {
+    const hasElementChild = Array.from(wrapper.childNodes).some(n => n.nodeType === Node.ELEMENT_NODE);
+    if (!hasElementChild) {
+      while (wrapper.firstChild) {
+        parent.insertBefore(wrapper.firstChild, wrapper);
+      }
+      parent.removeChild(wrapper);
+    }
   }
 }
 

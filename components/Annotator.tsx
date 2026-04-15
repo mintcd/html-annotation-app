@@ -96,6 +96,7 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
         const pages: any[] = await repository.select('id', 'title').from('pages').where(eq('url', pageUrl));
         const existing = pages && pages.length ? pages[0] : null;
         if (existing) await repository.update({ title: docTitle }).from('pages').where(eq('url', pageUrl));
+        console.log("Updated page title in DB");
       } else {
         console.log('Document title empty; skipping DB update to avoid erasing stored title.');
       }

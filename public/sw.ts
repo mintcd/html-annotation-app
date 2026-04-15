@@ -47,7 +47,71 @@ function openDB(): Promise<IDBDatabase> {
       const req = indexedDB.open('annotation-db', 1);
       req.onupgradeneeded = () => {
         const db = req.result;
-        if (!db.objectStoreNames.contains('operations')) db.createObjectStore('operations', { keyPath: 'id' });
+        const TableSchemas: Record<string, { keyPath: string | string[]; indices: Array<{ name: string; keyPath: string | string[]; options?: any }> }> = {
+          pages: {
+            keyPath: 'id',
+            indices: [
+              { name: 'url', keyPath: 'url' },
+              { name: 'by_created', keyPath: 'created_at' },
+            ]
+          },
+          annotations: {
+            keyPath: 'id',
+            indices: [
+              { name: 'page_id', keyPath: 'page_id' },
+              { name: 'by_created', keyPath: 'created_at' }
+            ]
+          },
+          operations: {
+            keyPath: 'id',
+            indices: [
+              { name: 'by_processed', keyPath: 'processed' },
+              { name: 'by_client', keyPath: ['client_id', 'client_op_id'] },
+              { name: 'by_entity', keyPath: 'entity' },
+              { name: 'by_created_at', keyPath: 'created_at' },
+            ]
+          },
+          websites: {
+            keyPath: 'id',
+            indices: [
+              { name: 'by_origin', keyPath: 'origin' }
+            ]
+          },
+          snapshots: {
+            keyPath: 'id',
+            indices: [
+              { name: 'by_url', keyPath: 'url' }
+            ]
+          },
+          config: {
+            keyPath: 'key',
+            indices: []
+          }
+        };
+
+        Object.entries(TableSchemas).forEach(([storeName, schema]) => {
+          let store: IDBObjectStore;
+          if (!db.objectStoreNames.contains(storeName)) {
+            store = db.createObjectStore(storeName, { keyPath: schema.keyPath as any });
+          } else {
+            try {
+              const tx = (req as any).transaction as IDBTransaction | undefined | null;
+              store = tx ? tx.objectStore(storeName) : undefined as any;
+            } catch (e) {
+              store = undefined as any;
+            }
+          }
+
+          if (store) {
+            (schema.indices || []).forEach(idx => {
+              try {
+                if (!store.indexNames.contains(idx.name)) {
+                  store.createIndex(idx.name, idx.keyPath as any, idx.options);
+                }
+              } catch (e) { /* ignore */ }
+            });
+          }
+        });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
