@@ -87,5 +87,14 @@ export async function POST(request: Request) {
     .bind(slug, normalizedOrigin, ts, ts)
     .first<Website>();
 
+  // Record operation for website insert
+  try {
+    const opPayload = JSON.stringify({ action: 'insert', data: { id: website.id, origin: website.origin, created_at: website.created_at, updated_at: website.updated_at } });
+    const opId = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : String(Date.now()) + '-op';
+    await env.DB.prepare(`INSERT INTO operations (id, entity, op_type, payload, created_at, processed, attempts, client_id, client_op_id) VALUES (?, ?, 'insert', ?, ?, 1, 0, ?, ?)`)
+      .bind(opId, 'websites', opPayload, Date.now(), null, null)
+      .run();
+  } catch (e) { try { console.warn('Failed to record website insert operation', e); } catch { } }
+
   return json(website, 201);
 }

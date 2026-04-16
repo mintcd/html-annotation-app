@@ -152,6 +152,25 @@ export async function POST(request: Request) {
     .bind(ts, pageId)
     .run();
 
+  // Record operations for annotation insert and page update so other clients can replicate
+  try {
+    const opPayloadAnn = JSON.stringify({ action: 'insert', data: { id: returnAnnotation.id, page_id: returnAnnotation.page_id, text: returnAnnotation.text, html: returnAnnotation.html ?? null, color: returnAnnotation.color, comment: returnAnnotation.comment ?? null, position: returnAnnotation.position ?? null, created_at: returnAnnotation.created_at, updated_at: returnAnnotation.updated_at } });
+    const opIdAnn = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : String(Date.now()) + '-op';
+    await env.DB.prepare(`INSERT INTO operations (id, entity, op_type, payload, created_at, processed, attempts, client_id, client_op_id) VALUES (?, ?, 'insert', ?, ?, 1, 0, ?, ?)`)
+      .bind(opIdAnn, 'annotations', opPayloadAnn, Date.now(), null, null)
+      .run();
+  } catch (e) { try { console.warn('Failed to record annotation insert operation', e); } catch { } }
+
+  try {
+    const pageRow = await env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(pageId).first();
+    if (pageRow) {
+      const opPayloadPage = JSON.stringify({ action: 'update', id: pageId, changes: { number_of_annotations: pageRow.number_of_annotations } });
+      const opIdPage = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : String(Date.now()) + '-op';
+      await env.DB.prepare(`INSERT INTO operations (id, entity, op_type, payload, created_at, processed, attempts, client_id, client_op_id) VALUES (?, ?, 'update', ?, ?, 1, 0, ?, ?)`)
+        .bind(opIdPage, 'pages', opPayloadPage, Date.now(), null, null)
+        .run();
+    }
+  } catch (e) { try { console.warn('Failed to record page update operation for annotation insert', e); } catch { } }
 
   const resp = { ...returnAnnotation, html: htmlContent } as any;
   normalizeAnnotationPosition(resp);
@@ -235,6 +254,21 @@ export async function PUT(request: Request) {
 
   const resp = { ...updated, html: htmlContent } as any;
   normalizeAnnotationPosition(resp);
+  // Record annotation update operation
+  try {
+    const changes: any = {};
+    if (body.text !== undefined) changes.text = body.text;
+    if (body.html !== undefined) changes.html = updated?.html ?? null;
+    if (body.color !== undefined) changes.color = body.color;
+    if (body.comment !== undefined) changes.comment = body.comment !== '' ? body.comment : null;
+    if (body.position !== undefined) changes.position = body.position ?? null;
+    const opPayload = JSON.stringify({ action: 'update', id: body.id, changes });
+    const opId = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : String(Date.now()) + '-op';
+    await env.DB.prepare(`INSERT INTO operations (id, entity, op_type, payload, created_at, processed, attempts, client_id, client_op_id) VALUES (?, ?, 'update', ?, ?, 1, 0, ?, ?)`)
+      .bind(opId, 'annotations', opPayload, Date.now(), null, null)
+      .run();
+  } catch (e) { try { console.warn('Failed to record annotation update operation', e); } catch { } }
+
   return json(resp);
 }
 
@@ -266,6 +300,28 @@ export async function DELETE(request: Request) {
   await env.DB.prepare("DELETE FROM annotations WHERE id = ?")
     .bind(annotationId)
     .run();
+  // Record annotation delete (and page update) operations
+  try {
+    const opPayload = JSON.stringify({ action: 'delete', id: annotationId });
+    const opId = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : String(Date.now()) + '-op';
+    await env.DB.prepare(`INSERT INTO operations (id, entity, op_type, payload, created_at, processed, attempts, client_id, client_op_id) VALUES (?, ?, 'delete', ?, ?, 1, 0, ?, ?)`)
+      .bind(opId, 'annotations', opPayload, Date.now(), null, null)
+      .run();
+  } catch (e) { try { console.warn('Failed to record annotation delete operation', e); } catch { } }
+
+  try {
+    if (annotation) {
+      const pageRow = await env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(annotation.page_id).first();
+      if (pageRow) {
+        const opPayloadPage = JSON.stringify({ action: 'update', id: annotation.page_id, changes: { number_of_annotations: pageRow.number_of_annotations } });
+        const opIdPage = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : String(Date.now()) + '-op';
+        await env.DB.prepare(`INSERT INTO operations (id, entity, op_type, payload, created_at, processed, attempts, client_id, client_op_id) VALUES (?, ?, 'update', ?, ?, 1, 0, ?, ?)`)
+          .bind(opIdPage, 'pages', opPayloadPage, Date.now(), null, null)
+          .run();
+      }
+    }
+  } catch (e) { try { console.warn('Failed to record page update operation for annotation delete', e); } catch { } }
+
   return json({
     success: true,
     message: "Annotation deleted successfully",

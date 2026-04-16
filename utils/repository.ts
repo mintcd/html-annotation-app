@@ -6,13 +6,26 @@ function postToServiceWorker(message: any) {
   try {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     const controller = navigator.serviceWorker.controller;
+    try { console.debug('repository.postToServiceWorker - hasController:', !!controller, 'message:', message); } catch (e) { /* ignore */ }
     if (controller) {
-      try { controller.postMessage(message); } catch (e) { /* ignore */ }
+      try {
+        controller.postMessage(message);
+        try { console.debug('repository.postToServiceWorker - posted to controller'); } catch (e) { /* ignore */ }
+      } catch (e) {
+        try { console.warn('repository.postToServiceWorker - postMessage to controller failed', e); } catch (er) { /* ignore */ }
+      }
       return;
     }
     navigator.serviceWorker.ready.then((reg) => {
-      try { reg.active?.postMessage(message); } catch (e) { /* ignore */ }
-    }).catch(() => { });
+      try {
+        try { console.debug('repository.postToServiceWorker - posting via registration.active', !!reg?.active); } catch (e) { /* ignore */ }
+        reg.active?.postMessage(message);
+      } catch (e) {
+        try { console.warn('repository.postToServiceWorker - postMessage via registration failed', e); } catch (er) { /* ignore */ }
+      }
+    }).catch((e) => {
+      try { console.warn('repository.postToServiceWorker - serviceWorker.ready failed', e); } catch (er) { /* ignore */ }
+    });
   } catch (e) { /* ignore */ }
 }
 

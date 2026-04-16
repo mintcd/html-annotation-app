@@ -41,10 +41,13 @@ export default function Annotator({ annotations, title, pageUrl, iframeUrl }: An
   const openAnnotator = useCallback(async (href: string) => {
     const normalized = normalizeUrl(href);
 
-    // Ensure page exists; create if missing
+    // Do not auto-create pages with an empty title here.
+    // Dashboard is responsible for creating pages; Annotator will update title when available.
     const pages: any[] = await repository.select('id', 'url').from('pages').where(eq('url', normalized));
     if (!pages || pages.length === 0) {
-      await repository.insert({ url: normalized, title: '', number_of_scripts: 0, created_at: Date.now(), updated_at: Date.now() }).from('pages');
+      // Create a page record without an empty-string title so we don't overwrite
+      // a real title later; use null to indicate unknown title.
+      await repository.insert({ url: normalized, title: null, number_of_scripts: 0, created_at: Date.now(), updated_at: Date.now() }).from('pages');
     }
 
     // Ensure website (site slug) exists

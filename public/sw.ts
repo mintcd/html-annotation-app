@@ -171,7 +171,11 @@ async function processPendingOperations(limit = 50) {
     try {
       if (op.op_type === 'insert') {
         if (op.entity === 'pages') {
-          await fetch('/api/pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op.payload) });
+          try {
+            console.debug('SW: processing insert pages', op.payload);
+            const res = await fetch('/api/pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op.payload) });
+            console.debug('SW: insert pages response', res.status, res.ok);
+          } catch (e) { console.warn('SW: insert pages fetch failed', e); throw e; }
         } else if (op.entity === 'annotations') {
           const body = {
             url: op.payload.page_id,
@@ -181,9 +185,17 @@ async function processPendingOperations(limit = 50) {
             comment: op.payload.comment,
             position: op.payload.position,
           };
-          await fetch('/api/annotations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          try {
+            console.debug('SW: processing insert annotation', body);
+            const res = await fetch('/api/annotations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            console.debug('SW: insert annotation response', res.status, res.ok);
+          } catch (e) { console.warn('SW: insert annotation fetch failed', e); throw e; }
         } else if (op.entity === 'websites') {
-          await fetch('/api/websites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op.payload) });
+          try {
+            console.debug('SW: processing insert website', op.payload);
+            const res = await fetch('/api/websites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op.payload) });
+            console.debug('SW: insert website response', res.status, res.ok);
+          } catch (e) { console.warn('SW: insert website fetch failed', e); throw e; }
         }
       } else if (op.op_type === 'update') {
         if (op.entity === 'pages') {
@@ -198,10 +210,18 @@ async function processPendingOperations(limit = 50) {
             } catch (e) { /* ignore */ }
           }
           const body = { url, ...(op.payload.changes || {}) };
-          await fetch('/api/pages', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          try {
+            console.debug('SW: processing update pages', body);
+            const res = await fetch('/api/pages', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            console.debug('SW: update pages response', res.status, res.ok);
+          } catch (e) { console.warn('SW: update pages fetch failed', e); throw e; }
         } else if (op.entity === 'annotations') {
           const body = { id: op.payload.id, ...(op.payload.changes || {}) };
-          await fetch('/api/annotations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          try {
+            console.debug('SW: processing update annotation', body);
+            const res = await fetch('/api/annotations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            console.debug('SW: update annotation response', res.status, res.ok);
+          } catch (e) { console.warn('SW: update annotation fetch failed', e); throw e; }
         }
       } else if (op.op_type === 'delete') {
         if (op.entity === 'pages') {
@@ -215,10 +235,18 @@ async function processPendingOperations(limit = 50) {
               url = await new Promise((res, rej) => { req.onsuccess = () => res(req.result ? req.result.url : undefined); req.onerror = () => rej(req.error); });
             } catch (e) { /* ignore */ }
           }
-          await fetch(`/api/pages?url=${encodeURIComponent(url || '')}`, { method: 'DELETE' });
+          try {
+            console.debug('SW: processing delete page', url);
+            const res = await fetch(`/api/pages?url=${encodeURIComponent(url || '')}`, { method: 'DELETE' });
+            console.debug('SW: delete page response', res.status, res.ok);
+          } catch (e) { console.warn('SW: delete page fetch failed', e); throw e; }
         } else if (op.entity === 'annotations') {
           const id = op.payload.id;
-          await fetch(`/api/annotations?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+          try {
+            console.debug('SW: processing delete annotation', id);
+            const res = await fetch(`/api/annotations?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+            console.debug('SW: delete annotation response', res.status, res.ok);
+          } catch (e) { console.warn('SW: delete annotation fetch failed', e); throw e; }
         }
       }
 
@@ -235,7 +263,7 @@ async function processPendingOperations(limit = 50) {
 sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   const data = event.data;
   if (!data || typeof data.type !== 'string') return;
-    if (data.type === actions.registerSync) {
+  if (data.type === actions.registerSync) {
     try { (sw.registration as any).sync?.register('annotation-sync'); } catch (e) { /* ignore */ }
     return;
   }

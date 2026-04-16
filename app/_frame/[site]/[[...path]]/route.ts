@@ -48,67 +48,6 @@ function isJsonOnly(text: string): boolean {
   return false;
 }
 
-/** Returns the inline JS that records one proxy:script-executed signal. */
-function makeSignalScript(id: string): string {
-  const payload = JSON.stringify({ id });
-  return `;// Proxy execution signal - do not remove\n(function(){try{var d=${payload};if(typeof window!=='undefined'){window.__proxy_script_executed=window.__proxy_script_executed||[];window.__proxy_script_executed.push(d.id||d.url);if(typeof window.__proxy_script_executed_dispatch!=='function'){window.__proxy_script_executed_dispatch=function(detail){try{var ev;try{ev=new CustomEvent('proxy:script-executed',{detail:detail});}catch(e){ev=document.createEvent('CustomEvent');ev.initCustomEvent('proxy:script-executed',false,false,detail);}if(typeof window!=='undefined'&&window.dispatchEvent){window.dispatchEvent(ev);}  }catch(e){if(typeof console!=='undefined'&&console.warn)console.warn('proxy dispatch error',e);}}}try{window.__proxy_script_executed_dispatch(d);}catch(e){} } }catch(err){if(typeof console!=='undefined'&&console.warn)console.warn('proxy signal error',err);} })();`;
-}
-
-// Tiny script injected at top of <head> inside the iframe.
-// • Rewrites runtime root-relative URLs → /_proxy/{slug}/…
-function contentScript(slug: string): string {
-  return (
-    `<script data-proxy-injected="1">(function(){
-  // ── Root-relative URL interceptor ──────────────────────────────────────
-  var slug=${JSON.stringify(slug)};
-  var base='/_proxy/'+slug;
-  function rw(u){
-    if(!u||typeof u!=='string')return u;
-    if(u.startsWith('/')&&!u.startsWith('//')&&!u.startsWith('/_proxy/')&&!u.startsWith('/api/'))
-      return base+u;
-    return u;
-  }
-  var BLOCKED=${JSON.stringify(BLOCKED_SCRIPT_HOSTS)};
-  function isBlocked(u){try{var h=new URL(u).hostname;return BLOCKED.some(function(d){return h===d||h.endsWith('.'+d);});}catch(e){return false;}}
-  var sDesc=Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype,'src');
-  if(sDesc&&sDesc.set){
-    Object.defineProperty(HTMLScriptElement.prototype,'src',{get:sDesc.get,set:function(v){
-      if(typeof v==='string'&&isBlocked(v)){this.type='javascript/blocked';return;}
-      sDesc.set.call(this,rw(v));
-    },configurable:true});
-  }
-  var lDesc=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,'href');
-  if(lDesc&&lDesc.set)Object.defineProperty(HTMLLinkElement.prototype,'href',{get:lDesc.get,set:function(v){lDesc.set.call(this,rw(v));},configurable:true});
-  var iDesc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
-  if(iDesc&&iDesc.set)Object.defineProperty(HTMLImageElement.prototype,'src',{get:iDesc.get,set:function(v){iDesc.set.call(this,rw(v));},configurable:true});
-  var origSetAttr=Element.prototype.setAttribute;
-  Element.prototype.setAttribute=function(n,v){
-    if(n==='src'&&typeof v==='string'){if(isBlocked(v)){this.type='javascript/blocked';return;}return origSetAttr.call(this,n,rw(v));}
-    if(n==='href'&&typeof v==='string')return origSetAttr.call(this,n,rw(v));
-    return origSetAttr.call(this,n,v);
-  };
-  var origFetch=window.fetch;
-  window.fetch=function(input,init){
-    if(typeof input==='string')input=rw(input);
-    else if(input&&typeof input==='object'&&input.url){var u=rw(input.url);if(u!==input.url)input=new Request(u,input);}
-    return origFetch.call(this,input,init);
-  };
-  var origOpen=XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open=function(method,url){
-    if(typeof url==='string')url=rw(url);
-    return origOpen.apply(this,[method,url].concat(Array.prototype.slice.call(arguments,2)));
-  };
-})();
-window.addEventListener('error', function(e) {
-  window.parent.postMessage({ type: 'proxy:error', message: e.message, filename: e.filename, lineno: e.lineno }, '*');
-});
-window.addEventListener('unhandledrejection', function(e) {
-  window.parent.postMessage({ type: 'proxy:error', message: String(e.reason) }, '*');
-});
-</script>`
-  );
-}
-
 /**
  * Content script injected into stored/pasted HTML.
  * Unlike the proxy variant, this one rewrites root-relative fetch()/XHR
@@ -359,7 +298,7 @@ export async function GET(
     const content = $(el).text().trim();
     if (!content || isJsonOnly(content)) return;
     const id = `${targetUrl}#script-${scriptIndex++}`;
-    $(el).text(`${content}\n${makeSignalScript(id)}`);
+    $(el).text(`${content}`);
   });
 
   // Rewrite src / href / srcset / action on all elements
@@ -367,7 +306,8 @@ export async function GET(
     const src = $(el).attr('src') || '';
     if (!src || /^(data:|blob:|javascript:)/i.test(src)) return;
     const abs = absoluteUrl(base, src);
-    $(el).attr('src', proxiedUrl(site, abs));
+    const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
+    $(el).attr('src', isSameOrigin ? proxiedUrl(site, abs) : abs);
   });
 
   $('[href]').each((_, el) => {
@@ -395,8 +335,10 @@ export async function GET(
     const rewritten = srcset.split(',').map(part => {
       const [u, d] = part.trim().split(/\s+/, 2);
       if (!u || /^(data:|blob:)/i.test(u)) return part;
-      const proxied = proxiedUrl(site, absoluteUrl(base, u));
-      return d ? `${proxied} ${d}` : proxied;
+      const abs = absoluteUrl(base, u);
+      const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
+      const proxiedOrAbs = isSameOrigin ? proxiedUrl(site, abs) : abs;
+      return d ? `${proxiedOrAbs} ${d}` : proxiedOrAbs;
     }).join(', ');
     $(el).attr('srcset', rewritten);
   });
@@ -406,7 +348,9 @@ export async function GET(
     const style = $(el).attr('style') || '';
     const rewritten = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (_m, u) => {
       if (/^(data:|blob:)/i.test(u)) return _m;
-      return `url(${proxiedUrl(site, absoluteUrl(base, u))})`;
+      const abs = absoluteUrl(base, u);
+      const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
+      return `url(${isSameOrigin ? proxiedUrl(site, abs) : abs})`;
     });
     $(el).attr('style', rewritten);
   });
