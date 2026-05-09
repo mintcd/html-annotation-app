@@ -24,8 +24,26 @@ interface AnnotationPage {
 }
 
 
+function toAbsoluteUrl(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  try {
+    return new URL(trimmed).href;
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).href;
+    } catch {
+      return null;
+    }
+  }
+}
+
 async function navigateToPage(rawUrl: string): Promise<void> {
-  const u = new URL(rawUrl);
+  const absoluteUrl = toAbsoluteUrl(rawUrl);
+  if (!absoluteUrl) throw new Error('Please enter a valid URL');
+
+  const u = new URL(absoluteUrl);
   const res = await fetch('/api/websites', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -295,9 +313,25 @@ export default function Dashboard() {
   }
 
   async function saveAndNavigateToPage(rawUrl: string) {
-    const normalized = normalizeUrl(rawUrl);
-    await createPage({ url: normalized })
-    navigateToPage(normalized);
+    const absoluteUrl = toAbsoluteUrl(rawUrl);
+    if (!absoluteUrl) {
+      alert('Please enter a valid URL');
+      return;
+    }
+
+    const normalized = normalizeUrl(absoluteUrl);
+
+    try {
+      await createPage({ url: normalized });
+    } catch (error) {
+      console.warn('[Dashboard] Failed to create page before navigation:', error);
+    }
+
+    try {
+      await navigateToPage(normalized);
+    } catch (error) {
+      alert(`Error opening page: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   return (
