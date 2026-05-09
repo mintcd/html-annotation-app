@@ -314,17 +314,14 @@ export default function Dashboard() {
 
   async function saveAndNavigateToPage(rawUrl: string) {
     const absoluteUrl = toAbsoluteUrl(rawUrl);
-    if (!absoluteUrl) {
-      alert('Please enter a valid URL');
-      return;
-    }
+    const normalized = absoluteUrl ? normalizeUrl(absoluteUrl) : rawUrl;
 
-    const normalized = normalizeUrl(absoluteUrl);
-
-    try {
-      await createPage({ url: normalized });
-    } catch (error) {
-      console.warn('[Dashboard] Failed to create page before navigation:', error);
+    if (absoluteUrl) {
+      try {
+        await createPage({ url: normalized });
+      } catch (error) {
+        console.warn('[Dashboard] Failed to create page before navigation:', error);
+      }
     }
 
     try {
