@@ -313,18 +313,17 @@ export default function Dashboard() {
   }
 
   async function saveAndNavigateToPage(rawUrl: string) {
-    const absoluteUrl = toAbsoluteUrl(rawUrl);
-    const normalized = absoluteUrl ? normalizeUrl(absoluteUrl) : rawUrl;
+    try {
+      const absoluteUrl = toAbsoluteUrl(rawUrl);
+      if (!absoluteUrl) throw new Error('Please enter a valid URL');
+      const normalized = normalizeUrl(absoluteUrl);
 
-    if (absoluteUrl) {
       try {
         await createPage({ url: normalized });
       } catch (error) {
-        console.warn('[Dashboard] Failed to create page before navigation:', error);
+        console.warn('[Dashboard] Failed to create page before navigation, proceeding anyway:', error);
       }
-    }
 
-    try {
       await navigateToPage(normalized);
     } catch (error) {
       alert(`Error opening page: ${error instanceof Error ? error.message : 'Unknown error'}`);
