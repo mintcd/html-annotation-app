@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAnnotationContext } from '../context/Annotator.context';
-import { useAnnotatorOverlayOptional } from '../context/AnnotatorOverlay.context';
+import { useAnnotationContext } from '../contexts/Annotator.context';
+import { useAnnotatorOverlayOptional } from '../contexts/AnnotatorOverlay.context';
 import { Save, Times } from '../app/icons';
 import { Button } from '../design-system/button';
 import { useCoarsePointer } from '../hooks';
@@ -226,7 +226,7 @@ function restoreUserSelection(snapshot: UserSelectSnapshot | null): void {
   });
 }
 
-export default function Resizers({ annotationId, onResize }: Props) {
+export default function AnnotationResizeHandles({ annotationId, onResize }: Props) {
   const {
     annotations,
     contentRef,

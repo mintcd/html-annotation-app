@@ -3,14 +3,14 @@
 import { useRef } from "react";
 import { Highlighter } from "../app/icons";
 import { Button } from "../design-system/button";
-import { useSelection } from "../hooks/MenuOnRange.hooks";
+import { useAnnotationSelection } from "../hooks/MenuOnRange.hooks";
 import useMenuStyles from "../styles/MenuOnRange.styles";
-import { useAnnotationContext } from "../context/Annotator.context";
+import { useAnnotationContext } from "../contexts/Annotator.context";
 
-export default function MenuOnRange() {
+export default function SelectionToolbar() {
   const { currentHighlightColor } = useAnnotationContext();
   const menuRef = useRef<HTMLButtonElement>(null);
-  const { range, highlight } = useSelection(menuRef);
+  const { range, createHighlight } = useAnnotationSelection(menuRef);
   const styles = useMenuStyles(menuRef, range);
 
   return (
@@ -18,7 +18,7 @@ export default function MenuOnRange() {
     <Button
       variant="primary"
       size="small"
-      onClick={highlight}
+      onClick={createHighlight}
       ref={menuRef}
       onMouseDown={(e) => e.preventDefault()}
       style={styles.menuContainer}

@@ -175,7 +175,7 @@ export function trackScriptExecution(iframe: HTMLIFrameElement) {
             if (el.tagName?.toLowerCase() === 'script') {
               handleNewScript(el as HTMLScriptElement);
             } else {
-              el.querySelectorAll && el.querySelectorAll('script').forEach((sc) => handleNewScript(sc as HTMLScriptElement));
+              el.querySelectorAll('script').forEach((sc) => handleNewScript(sc as HTMLScriptElement));
             }
           }
         }

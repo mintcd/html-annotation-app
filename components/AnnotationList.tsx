@@ -5,10 +5,10 @@ import { Button } from "../design-system/button";
 import { IconButton } from "../design-system/icon-button";
 import { Latex } from "../design-system/latex";
 import { Comment, Edit, Save, Times, Trash } from "../app/icons";
-import PromptBox from "./PromptBox";
+import ActionDialog from "./ActionDialog";
 import CommentEditor from "./CommentEditor";
 import EmptyState from "./EmptyState";
-import { useAnnotationContextOptional } from "../context/Annotator.context";
+import { useAnnotationContextOptional } from "../contexts/Annotator.context";
 import styles from "../styles/AnnotationList.styles";
 
 type AnnotationListProps = {
@@ -59,7 +59,7 @@ export default function AnnotationList({
 
   const [prompt, setPrompt] = useState<PromptState>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [activeAnnotationId, setFocusedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!editingCommentId) return;
@@ -124,7 +124,7 @@ export default function AnnotationList({
       aria-label={mode === "compact" ? "Page annotations" : undefined}
     >
       {prompt && (
-        <PromptBox
+        <ActionDialog
           message={prompt.message}
           actions={prompt.actions}
           onClose={() => setPrompt(null)}
@@ -139,14 +139,14 @@ export default function AnnotationList({
           role="list"
         >
           {annotations.map((annotation) => {
-            const isActive = hoveredId === annotation.id || focusedId === annotation.id;
+            const isActive = hoveredId === annotation.id || activeAnnotationId === annotation.id;
             const excerpt = annotationExcerpt(annotation);
 
             if (mode === "compact") {
               return (
                 <div key={annotation.id} role="listitem">
                   <article
-                    style={styles.annotationItem(isActive, focusedId === annotation.id)}
+                    style={styles.annotationItem(isActive, activeAnnotationId === annotation.id)}
                     onMouseEnter={() => setHoveredId(annotation.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     onFocus={() => setFocusedId(annotation.id)}

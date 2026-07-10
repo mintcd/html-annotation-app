@@ -16,7 +16,7 @@ type Props = {
   onClose?: () => void;
 };
 
-export default function PromptBox({ message, actions, onClose }: Props) {
+export default function ActionDialog({ message, actions, onClose }: Props) {
   useEffect(() => {
     if (!onClose) return;
     const closeOnEscape = (event: KeyboardEvent) => {

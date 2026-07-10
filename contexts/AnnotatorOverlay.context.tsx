@@ -91,9 +91,9 @@ export type AnnotatorOverlayContextValue = {
   setContextual: (contextual: AnnotatorContextualOverlay) => void;
   showSelection: () => void;
   showHighlight: (annotationId: string) => void;
-  showResize: (annotationId: string) => void;
-  showComment: (annotationId: string) => void;
-  showColor: (annotationId: string) => void;
+  enterResizeMode: (annotationId: string) => void;
+  openCommentEditor: (annotationId: string) => void;
+  openColorPicker: (annotationId: string) => void;
   clearContextual: () => void;
   setDialog: (dialog: AnnotatorDialog) => void;
   showExternalLink: (href: string) => void;
@@ -151,15 +151,15 @@ export function AnnotatorOverlayProvider({
     (annotationId: string) => setContextual({ type: "highlight", annotationId }),
     [setContextual],
   );
-  const showResize = useCallback(
+  const enterResizeMode = useCallback(
     (annotationId: string) => setContextual({ type: "resize", annotationId }),
     [setContextual],
   );
-  const showComment = useCallback(
+  const openCommentEditor = useCallback(
     (annotationId: string) => setContextual({ type: "comment", annotationId }),
     [setContextual],
   );
-  const showColor = useCallback(
+  const openColorPicker = useCallback(
     (annotationId: string) => setContextual({ type: "color", annotationId }),
     [setContextual],
   );
@@ -213,9 +213,9 @@ export function AnnotatorOverlayProvider({
     setContextual,
     showSelection,
     showHighlight,
-    showResize,
-    showComment,
-    showColor,
+    enterResizeMode,
+    openCommentEditor,
+    openColorPicker,
     clearContextual,
     setDialog,
     showExternalLink,
@@ -233,11 +233,11 @@ export function AnnotatorOverlayProvider({
     setContextual,
     setDialog,
     setPanel,
-    showColor,
-    showComment,
+    openColorPicker,
+    openCommentEditor,
     showExternalLink,
     showHighlight,
-    showResize,
+    enterResizeMode,
     showPasteHtml,
     showSelection,
     state,

@@ -1,11 +1,11 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAnnotationContext } from "../context/Annotator.context";
-import { useAnnotatorOverlayOptional } from "../context/AnnotatorOverlay.context";
+import { useAnnotationContext } from "../contexts/Annotator.context";
+import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.context";
 
-export function useFocusedId() {
-  const [focusedId, setFocusedId] = useState<string | null>(null);
+export function useActiveAnnotationId() {
+  const [activeAnnotationId, setFocusedId] = useState<string | null>(null);
   const focusedIdRef = useRef<string | null>(null);
   const { iframeRef, iframeReady } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
@@ -17,12 +17,12 @@ export function useFocusedId() {
     else overlay?.clearContextual();
   }, [overlay]);
 
-  const overlayFocusedId = overlay && 'annotationId' in overlay.contextual
+  const overlayAnnotationId = overlay && 'annotationId' in overlay.contextual
     ? overlay.contextual.annotationId
     : null;
-  const visibleFocusedId = overlay
-    ? overlayFocusedId === focusedId ? focusedId : null
-    : focusedId;
+  const visibleAnnotationId = overlay
+    ? overlayAnnotationId === activeAnnotationId ? activeAnnotationId : null
+    : activeAnnotationId;
 
   useEffect(() => {
     if (!iframeReady) return;
@@ -60,7 +60,7 @@ export function useFocusedId() {
         const id = span.dataset.highlightId;
         if (id) {
           const currentId = overlay
-            ? overlayFocusedId === focusedIdRef.current ? focusedIdRef.current : null
+            ? overlayAnnotationId === focusedIdRef.current ? focusedIdRef.current : null
             : focusedIdRef.current;
           updateFocusedId(currentId === id ? null : id);
           return;
@@ -74,7 +74,7 @@ export function useFocusedId() {
         const id = span.dataset.highlightId;
         if (id) {
           const currentId = overlay
-            ? overlayFocusedId === focusedIdRef.current ? focusedIdRef.current : null
+            ? overlayAnnotationId === focusedIdRef.current ? focusedIdRef.current : null
             : focusedIdRef.current;
           updateFocusedId(currentId === id ? null : id);
           return;
@@ -98,7 +98,7 @@ export function useFocusedId() {
       iDoc.removeEventListener('pointerup', handleInteraction);
       iDoc.removeEventListener('keydown', handleKeyDown as EventListener);
     };
-  }, [iframeReady, iframeRef, overlay, overlayFocusedId, updateFocusedId]);
+  }, [iframeReady, iframeRef, overlay, overlayAnnotationId, updateFocusedId]);
 
-  return { focusedId: visibleFocusedId, setFocusedId: updateFocusedId };
+  return { activeAnnotationId: visibleAnnotationId, setFocusedId: updateFocusedId };
 }

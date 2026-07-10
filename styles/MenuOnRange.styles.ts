@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from "react";
 import { useMobile, useElementWidth } from "../hooks";
-import { useAnnotationContext } from "../context/Annotator.context";
+import { useAnnotationContext } from "../contexts/Annotator.context";
 
 export default function useMenuOnRangeStyles(ref: React.RefObject<HTMLElement | null>, range: Range | null) {
   const { isMobile } = useMobile();

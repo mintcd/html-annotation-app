@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkey, useMobile } from "../hooks";
 import colorPickerStyles from "../styles/ColorPicker.styles";
 import { highlightBoundingRect } from "../utils/highlight";
-import { useAnnotationContextOptional } from "../context/Annotator.context";
+import { useAnnotationContextOptional } from "../contexts/Annotator.context";
 
 type ColorPickerProps = {
   onColorSelect: (color: string) => void;

@@ -1,11 +1,20 @@
 "use client";
 
-import { createContext, useContext, ReactNode } from "react";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { removeHighlights } from "../utils/dom";
-import { eq, useSyncStatus } from "@mintcd/sync-engine";
+import { highlightAnnotations } from "../utils/annotations";
+import { eq, useLiveQuery, useSyncStatus } from "@mintcd/sync-engine";
 import { db } from "../utils/engine";
-import { ensurePage, syncTimestamp } from "../utils/syncData";
+import { ensurePage, normalizeAnnotationRow, syncTimestamp } from "../utils/syncData";
 
 type AnnotationPosition = NonNullable<Annotation['position']>;
 
@@ -46,9 +55,11 @@ type AnnotationContextType = {
   addAnnotation: (payload: { text: string; html: string; color: string; position?: AnnotationPosition }) => Promise<{ tempId: string; promise: Promise<string> }>;
   deleteAnnotation: (id: string) => void;
   updateAnnotation: (params: AnnotationUpdate) => Promise<boolean>;
-  syncStatus: 'synced' | 'syncing' | 'to-sync';
+  syncStatus: 'synced' | 'syncing' | 'pending';
   lastAutoSaveStatus: { success: boolean; message: string } | null;
 };
+
+const EMPTY_ANNOTATIONS: Annotation[] = [];
 
 const AnnotationContextProvider = createContext<AnnotationContextType | null>(null);
 
@@ -66,7 +77,7 @@ export function useAnnotationContextOptional(): AnnotationContextType | null {
 
 export function AnnotationContext({
   children,
-  initialAnnotations = [],
+  initialAnnotations,
   pageId,
   pageUrl,
   title,
@@ -75,14 +86,42 @@ export function AnnotationContext({
   iframeUrl,
   iframeReady,
 }: AnnotationContextProps) {
-  const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [currentHighlightColor, setCurrentHighlightColor] = useState<string>("#87ceeb");
   const [lastAutoSaveStatus, setLastAutoSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const initialHighlightsApplied = useRef(false);
   const sync = useSyncStatus();
+  const liveAnnotations = useLiveQuery(db.select().from('annotations'));
+
+  const sourceAnnotations = useMemo(
+    () => liveAnnotations.data
+      ? liveAnnotations.data
+        .map((row) => normalizeAnnotationRow(row as unknown as Record<string, unknown>))
+        .filter((annotation) => annotation.page_id === pageId || annotation.page_id === pageUrl)
+      : initialAnnotations ?? EMPTY_ANNOTATIONS,
+    [initialAnnotations, liveAnnotations.data, pageId, pageUrl],
+  );
+
+  const [annotations, setAnnotations] = useState<Annotation[]>(sourceAnnotations);
 
   useEffect(() => {
-    setAnnotations(initialAnnotations);
-  }, [initialAnnotations]);
+    setAnnotations(sourceAnnotations);
+  }, [sourceAnnotations]);
+
+  useEffect(() => {
+    if (!iframeReady) {
+      initialHighlightsApplied.current = false;
+      return;
+    }
+
+    if (
+      liveAnnotations.loading
+      || initialHighlightsApplied.current
+      || !contentRef.current
+    ) return;
+
+    initialHighlightsApplied.current = true;
+    void highlightAnnotations(sourceAnnotations, contentRef.current);
+  }, [contentRef, iframeReady, liveAnnotations.loading, sourceAnnotations]);
 
   const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position?: AnnotationPosition }): Promise<{ tempId: string; promise: Promise<string> }> => {
     const { text, html, color, position } = payload;
@@ -205,9 +244,9 @@ export function AnnotationContext({
     }
   }, [contentRef]);
 
-  const syncStatus = useMemo<'synced' | 'syncing' | 'to-sync'>(() => {
+  const syncStatus = useMemo<'synced' | 'syncing' | 'pending'>(() => {
     if (sync.isSyncing) return 'syncing';
-    if (sync.status === 'error' || sync.status === 'offline' || (sync.pendingCount ?? 0) > 0) return 'to-sync';
+    if (sync.status === 'error' || sync.status === 'offline' || (sync.pendingCount ?? 0) > 0) return 'pending';
     return 'synced';
   }, [sync.isSyncing, sync.pendingCount, sync.status]);
 

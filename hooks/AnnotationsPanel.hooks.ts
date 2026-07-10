@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import React from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { RefObject, PointerEvent as ReactPointerEvent } from 'react';
 
 
 type UseResizeConfig = {
@@ -8,18 +8,38 @@ type UseResizeConfig = {
   maxWidth?: number;
   storageKey?: string;
   disabled?: boolean;
-  elementRef?: React.RefObject<HTMLElement>;
+  elementRef?: RefObject<HTMLElement>;
 };
 
 type UseResizeReturn = {
   width: number;
-  // Optional React pointer handler to attach to a handle element
-  onPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerDown?: (e: ReactPointerEvent<HTMLDivElement>) => void;
   // Expose setter for programmatic width changes
   setWidth?: (w: number) => void;
 };
 
-export function useResize({
+function getInitialWidth(
+  initialWidth: number,
+  minWidth: number,
+  maxWidth: number,
+  storageKey?: string,
+) {
+  if (!storageKey || typeof window === 'undefined') return initialWidth;
+
+  try {
+    const savedWidth = window.localStorage.getItem(storageKey);
+    if (!savedWidth) return initialWidth;
+
+    const parsed = Number.parseInt(savedWidth, 10);
+    return Number.isFinite(parsed) && parsed >= minWidth && parsed <= maxWidth
+      ? parsed
+      : initialWidth;
+  } catch {
+    return initialWidth;
+  }
+}
+
+export function useResizablePanelWidth({
   initialWidth = 320,
   minWidth = 240,
   maxWidth = 560,
@@ -27,29 +47,14 @@ export function useResize({
   disabled = false,
   elementRef,
 }: UseResizeConfig = {}): UseResizeReturn {
-  const [width, setWidthState] = useState<number>(initialWidth);
+  const [width, setWidthState] = useState<number>(() => (
+    getInitialWidth(initialWidth, minWidth, maxWidth, storageKey)
+  ));
 
   // Refs for drag state
   const dragging = useRef<boolean>(false);
   const startX = useRef<number>(0);
   const startW = useRef<number>(0);
-
-  // Load width from localStorage on mount
-  useEffect(() => {
-    if (!storageKey) return;
-
-    try {
-      const savedWidth = localStorage.getItem(storageKey);
-      if (savedWidth) {
-        const parsed = Number.parseInt(savedWidth, 10);
-        if (Number.isFinite(parsed) && parsed >= minWidth && parsed <= maxWidth) {
-          setWidthState(parsed);
-        }
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, [storageKey, minWidth, maxWidth]);
 
   // Save width to localStorage when it changes
   useEffect(() => {
@@ -132,7 +137,7 @@ export function useResize({
 
   // Pointer event handlers
   const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+    (e: ReactPointerEvent<HTMLDivElement>) => {
       if (disabled || e.button !== 0) return;
 
       dragging.current = true;
@@ -181,104 +186,3 @@ export function useResize({
     setWidth,
   };
 }
-
-export function useClickOutside(
-  ref: React.RefObject<HTMLElement>,
-  handleOnClickOutside: (event: MouseEvent | TouchEvent) => void
-) {
-  useEffect(() => {
-    const listener = (event: MouseEvent | TouchEvent) => {
-      // Ignore synthetic events forwarded from the iframe (e.g. via dispatchEvent).
-      // Those are not trusted user events and should not dismiss the sidebar.
-      if (!event.isTrusted) return;
-      if (!ref.current || ref.current.contains(event.target as Node)) {
-        return;
-      }
-      handleOnClickOutside(event);
-    };
-    document.addEventListener('mousedown', listener);
-    document.addEventListener('touchstart', listener);
-    return () => {
-      document.removeEventListener('mousedown', listener);
-      document.removeEventListener('touchstart', listener);
-    };
-  }, [ref, handleOnClickOutside]);
-}
-
-export function usePreventScroll(
-  ref: React.RefObject<HTMLElement>,
-  shouldPrevent: boolean
-) {
-  useEffect(() => {
-    if (!shouldPrevent || !ref.current) return;
-
-    const element = ref.current;
-    const preventScroll = (e: TouchEvent) => {
-      e.preventDefault();
-      console.log("Preventing scroll");
-    };
-
-    element.addEventListener('touchmove', preventScroll, { passive: false });
-
-    return () => {
-      element.removeEventListener('touchmove', preventScroll);
-    };
-  }, [ref, shouldPrevent]);
-}
-
-export function useMobileToggle(isMobile: boolean) {
-  const [showToggleButton, setShowToggleButton] = useState(!isMobile);
-
-  useEffect(() => {
-    if (!isMobile) {
-      setShowToggleButton(true);
-      return;
-    }
-
-    let hideTimeout: NodeJS.Timeout;
-    let startX = 0;
-    let startY = 0;
-    let hasMoved = false;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      hasMoved = false;
-      if (hideTimeout) clearTimeout(hideTimeout);
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      const dx = Math.abs(e.touches[0].clientX - startX);
-      const dy = Math.abs(e.touches[0].clientY - startY);
-      if (dx > 5 || dy > 5) {
-        hasMoved = true;
-        setShowToggleButton(false);
-      }
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if ((e.target as Element).matches?.('span.highlighted-text[data-highlight-id]')) {
-        return;
-      }
-      if (!hasMoved) {
-        setShowToggleButton(prev => !prev);
-        hideTimeout = setTimeout(() => setShowToggleButton(false), 4000);
-      }
-    };
-
-    document.addEventListener('touchstart', handleTouchStart, { passive: true });
-    document.addEventListener('touchmove', handleTouchMove, { passive: true });
-    document.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      document.removeEventListener('touchstart', handleTouchStart);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-      if (hideTimeout) clearTimeout(hideTimeout);
-    };
-  }, [isMobile]);
-
-  return showToggleButton;
-}
-
-

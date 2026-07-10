@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useMobile } from ".";
 import { cleanedHtml, createTextAnchor, highlightRange, rangeToHtml } from "../utils/dom";
-import { useAnnotationContext } from "../context/Annotator.context";
-import { useAnnotatorOverlayOptional } from "../context/AnnotatorOverlay.context";
+import { useAnnotationContext } from "../contexts/Annotator.context";
+import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.context";
 
 // Small debounce hook used to create a stable debounced callback
 function useDebouncedCallback<T extends (...args: unknown[]) => void>(fn: T, delay = 100) {
@@ -25,7 +25,7 @@ function useDebouncedCallback<T extends (...args: unknown[]) => void>(fn: T, del
   }, [delay]);
 }
 
-export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
+export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | null>) {
   const [range, setRange] = useState<Range | null>(null);
   const { isMobile } = useMobile();
   const { contentRef, iframeRef, iframeReady, addAnnotation, currentHighlightColor } = useAnnotationContext();
@@ -123,7 +123,7 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
   }, [iframeReady, iframeRef, isMobile, handlePointerUp, handlePointerDown, debouncedFinalize, handleSelectionChanging]);
 
 
-  const highlight = async () => {
+  async function createHighlight() {
     if (!range) return;
 
     const { html } = cleanedHtml(rangeToHtml(range));
@@ -185,7 +185,7 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
     });
   };
 
-  return { range: visibleRange, highlight };
+  return { range: visibleRange, createHighlight };
 }
 
 export function usePosition(menuRef: React.RefObject<HTMLElement | null>) {

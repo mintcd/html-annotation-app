@@ -15,7 +15,7 @@ type Props = {
   onClose: () => void;
 };
 
-export default function PasteHTML({ error, site, path, onSuccess, onClose }: Props) {
+export default function PasteHtmlDialog({ error, site, path, onSuccess, onClose }: Props) {
   const [html, setHtml] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');

@@ -2,10 +2,10 @@
 
 import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAnnotationContext } from "../context/Annotator.context";
+import { useAnnotationContext } from "../contexts/Annotator.context";
 import { refreshFrameBundle } from '@/utils/frameCache';
-import { useMobile, useHotkey } from "../hooks";
-import { useResize, useClickOutside } from "../hooks/Sidebar.hooks";
+import { useMobile, useHotkey, useClickOutside } from "../hooks";
+import { useResizablePanelWidth } from "../hooks/AnnotationsPanel.hooks";
 import AnnotationList from "./AnnotationList";
 import { sortOptions } from "../utils/annotations";
 import type { SortOption } from "../utils/annotations";
@@ -14,16 +14,16 @@ import { Badge } from "../design-system/badge";
 import { IconButton } from "../design-system/icon-button";
 import Dropdown from "./Dropdown";
 import { escapeAttrValue } from "../utils/string";
-import styles from "../styles/Sidebar.styles";
+import styles from "../styles/AnnotationsPanel.styles";
 
 type SidebarProps = {
-  onPasteHTML?: () => void;
+  onPasteHtml?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
 
-export default function Sidebar({
-  onPasteHTML,
+export default function AnnotationsPanel({
+  onPasteHtml,
   open: controlledOpen,
   onOpenChange,
 }: SidebarProps) {
@@ -96,7 +96,7 @@ export default function Sidebar({
 
   // Resizing functionality
   const handleRef = useRef<HTMLDivElement>(null);
-  const { width, onPointerDown, setWidth } = useResize({
+  const { width, onPointerDown, setWidth } = useResizablePanelWidth({
     initialWidth: 320,
     minWidth: 240,
     maxWidth: 560,
@@ -257,12 +257,12 @@ export default function Sidebar({
 
               <div style={styles.toolbarActions}>
                 <Badge tone={syncTone} size="small" dot>{syncLabel}</Badge>
-                {onPasteHTML && (
+                {onPasteHtml && (
                   <IconButton
                     label="Paste page HTML"
                     title="Paste HTML when page content is blocked"
                     size="small"
-                    onClick={onPasteHTML}
+                    onClick={onPasteHtml}
                   >
                     <PasteHtml size={13} />
                   </IconButton>

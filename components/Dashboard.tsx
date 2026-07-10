@@ -20,7 +20,7 @@ import {
 } from 'react-icons/fi';
 import { db } from '../utils/engine';
 import { useMobile } from "../hooks";
-import PromptBox from './PromptBox';
+import ActionDialog from './ActionDialog';
 import AnnotationList from './AnnotationList';
 import { normalizeUrl } from '../utils/url';
 import { ensurePage, getOrCreateWebsite, normalizeAnnotationRow, syncTimestamp } from '../utils/syncData';
@@ -1614,7 +1614,7 @@ export default function Dashboard() {
       </main>
 
       {deletePagePrompt && (
-        <PromptBox
+        <ActionDialog
           message={`Are you sure you want to delete all annotations for "${deletePagePrompt.pageUrl}"? This action cannot be undone.`}
           actions={[
             { label: 'Cancel', action: () => setDeletePagePrompt(null), variant: 'secondary' },
@@ -1625,7 +1625,7 @@ export default function Dashboard() {
       )}
 
       {deleteAnnotationPrompt && (
-        <PromptBox
+        <ActionDialog
           message="Are you sure you want to delete this annotation? This action cannot be undone."
           actions={[
             { label: 'Cancel', action: () => setDeleteAnnotationPrompt(null), variant: 'secondary' },

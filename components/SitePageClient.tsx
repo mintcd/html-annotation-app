@@ -41,11 +41,11 @@ function ResolvedSitePage({
   );
   const page = useLiveQuery(db.select().from("pages").where(eq("url", url)));
   const pageRow = page.data?.[0];
-  const [createError, setCreateError] = useState<string>();
+  const [createError, setCreateError] = useState<{ url: string; message: string }>();
+  const currentCreateError = createError?.url === url ? createError.message : undefined;
 
   useEffect(() => {
     let active = true;
-    setCreateError(undefined);
 
     if (page.loading || pageRow || sync.isSyncing) {
       return () => {
@@ -55,7 +55,10 @@ function ResolvedSitePage({
 
     void ensurePage(url).catch((error) => {
       if (!active) return;
-      setCreateError(error instanceof Error ? error.message : String(error));
+      setCreateError({
+        url,
+        message: error instanceof Error ? error.message : String(error),
+      });
     });
 
     return () => {
@@ -63,9 +66,15 @@ function ResolvedSitePage({
     };
   }, [page.loading, pageRow, sync.isSyncing, url]);
 
-  if (page.loading || (!pageRow && sync.isSyncing)) return <Loader />;
-  if (page.error) return <PageError message={page.error} />;
-  if (createError) return <PageError message={createError} />;
+  if (page.loading || (!pageRow && sync.isSyncing))
+    return <Loader />;
+
+  if (page.error)
+    return <PageError message={page.error} />;
+
+  if (currentCreateError)
+    return <PageError message={currentCreateError} />;
+
   if (!pageRow) return <Loader />;
 
   const framePathname = path?.length ? path.join("/") : "";

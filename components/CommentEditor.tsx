@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import commentEditorStyles from "../styles/CommentEditor.styles";
-import { useAnnotationContext } from "../context/Annotator.context";
+import { useAnnotationContext } from "../contexts/Annotator.context";
 import { Button } from "../design-system/button";
 import { Save, Times } from "../app/icons";
 
