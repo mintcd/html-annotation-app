@@ -1,38 +1,21 @@
-import Annotator from "@/components/Annotator";
-import { getWebsiteBySlug, loadAnnotationsForPage, getPageFromServer } from "@/utils/api.server";
-import { normalizeUrl, appPathToPageUrl } from "@/utils/url";
-import { notFound } from "next/navigation";
+import SitePageClient from "@/components/SitePageClient";
 
 type Params = { site: string; path?: string[] };
 type SearchParams = Record<string, string | string[] | undefined>;
 
-/** Re-serialize Next.js searchParams as a query string. */
-function buildSearch(sp: SearchParams): string {
+function buildSearchParams(searchParams: SearchParams): string {
   const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(sp)) {
-    if (Array.isArray(v)) v.forEach((val) => params.append(k, val));
-    else if (v !== undefined) params.set(k, v);
+
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (Array.isArray(value)) {
+      value.forEach((item) => params.append(key, item));
+    } else if (value !== undefined) {
+      params.set(key, value);
+    }
   }
-  const str = params.toString();
-  return str ? `?${str}` : "";
-}
 
-export async function generateMetadata({
-  params,
-  searchParams,
-}: {
-  params: Promise<Params>;
-  searchParams: Promise<SearchParams>;
-}) {
-  const { site, path } = await params;
-  const search = buildSearch(await searchParams);
-
-  const website = await getWebsiteBySlug(site);
-  if (!website) return { title: "Not Found 2" };
-  const url = appPathToPageUrl(website.origin, path, search);
-  const { title } = await getPageFromServer(url);
-  const fallback = new URL(url).hostname.replace(/^www\./, '');
-  return { title: title ?? `Annotating ${fallback}` };
+  const search = params.toString();
+  return search ? `?${search}` : "";
 }
 
 export default async function SitePage({
@@ -42,25 +25,16 @@ export default async function SitePage({
   params: Promise<Params>;
   searchParams: Promise<SearchParams>;
 }) {
-  const { site, path } = await params;
-  const search = buildSearch(await searchParams);
-
-  const website = await getWebsiteBySlug(site);
-  if (!website) notFound();
-
-  // Reconstruct the original URL and strip tracking params
-  const url = normalizeUrl(appPathToPageUrl(website.origin, path, search));
-  const framePathname = path?.length ? path.join('/') : '';
-  const frameUrl = `/_frame/${site}${framePathname ? '/' + framePathname : ''}${search}`;
-  const annotations = await loadAnnotationsForPage(url);
-  const { title } = await getPageFromServer(url);
+  // Vinext currently resolves dynamic params to an object with a null
+  // prototype. Normalize both route inputs before crossing the RSC boundary.
+  const resolvedParams = { ...(await params) };
+  const resolvedSearchParams = { ...(await searchParams) };
 
   return (
-    <Annotator
-      annotations={annotations}
-      title={title ?? ''}
-      pageUrl={url}
-      iframeUrl={frameUrl}
+    <SitePageClient
+      site={resolvedParams.site}
+      path={resolvedParams.path ? [...resolvedParams.path] : undefined}
+      search={buildSearchParams(resolvedSearchParams)}
     />
-  )
+  );
 }

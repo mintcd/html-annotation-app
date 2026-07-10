@@ -1,0 +1,45 @@
+.root {
+  --annotator-layer-workspace: 10;
+  --annotator-layer-contextual: 20;
+  --annotator-layer-feedback: 30;
+  --annotator-layer-dialog: 40;
+
+  position: fixed;
+  inset: 0;
+  z-index: var(--ds-z-overlay, 50);
+  pointer-events: none;
+  isolation: isolate;
+  font-family: var(--ds-font-family-sans, system-ui, sans-serif);
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.layer > * {
+  pointer-events: auto;
+}
+
+.workspace {
+  z-index: var(--annotator-layer-workspace);
+}
+
+.contextual {
+  z-index: var(--annotator-layer-contextual);
+}
+
+.feedback {
+  z-index: var(--annotator-layer-feedback);
+}
+
+.dialog {
+  z-index: var(--annotator-layer-dialog);
+}
+
+.focusScope:focus {
+  outline: none;
+}
+

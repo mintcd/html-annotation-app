@@ -125,56 +125,27 @@ function frameErrorResponse(message: string): Response {
   });
 }
 
-/**
- * Attempts to fetch a page via the configured browser worker (Browserless on CF Containers).
- * Returns the HTML string on success, or null if the worker is not configured / fails.
- */
-async function tryBrowserWorker(
-  env: ReturnType<typeof getEnv>,
-  url: string,
-  headers: Record<string, string>,
-  cookie: string | null,
-): Promise<string | null> {
-  const { BROWSER_WORKER_URL, BROWSER_WORKER_TOKEN } = env;
-  if (!BROWSER_WORKER_URL || !BROWSER_WORKER_TOKEN) return null;
-  try {
-    const res = await fetch(`${BROWSER_WORKER_URL}/fetch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${BROWSER_WORKER_TOKEN}`,
-      },
-      body: JSON.stringify({ url, headers, cookie: cookie ?? undefined }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { html?: string; error?: string };
-    return data.html ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(
   request: Request,
   { params }: { params: { site: string; path?: string[] } }
 ) {
   const { site, path } = params;
   const reqUrl = new URL(request.url);
-  let env: ReturnType<typeof getEnv>;
+
+  const env = getEnv();
+  const cookieRow = await env.DB.prepare('SELECT cookie FROM site_cookies WHERE site_id = ?')
+    .bind(site).first<{ cookie: string }>();
+  const siteCookie: string | null = cookieRow ? cookieRow.cookie : null;
 
   // ── 1. Resolve origin ──────────────────────────────────────────────────
   let siteOrigin: string;
   let storedHtml: string | null = null;
   try {
-    env = getEnv();
+
     const row = await env.DB.prepare('SELECT origin FROM websites WHERE id = ?')
       .bind(site).first<{ origin: string }>();
     if (!row) return new Response(`Unknown site: ${site}`, { status: 404 });
     siteOrigin = row.origin;
-    // Optionally load a stored Cookie header for this site (set via /api/cookies)
-    const cookieRow = await env.DB.prepare('SELECT cookie FROM site_cookies WHERE site_id = ?')
-      .bind(site).first<{ cookie: string }>();
-    var siteCookie: string | null = cookieRow ? cookieRow.cookie : null;
 
     // ── Check R2 bucket for user-pasted HTML ───────────────────────────
     const r2Key = path?.length ? `${site}/${path.join('/')}` : site;
@@ -216,28 +187,11 @@ export async function GET(
 
       const upstream = await fetchWithCookies(targetUrl, reqHeaders);
 
-      if (!upstream.ok) {
-        // Direct fetch failed — try the browser worker if configured
-        const browserHtml = await tryBrowserWorker(env, targetUrl, reqHeaders, siteCookie);
-        if (browserHtml !== null) {
-          html = browserHtml;
-          finalUrl = targetUrl;
-        } else {
-          return frameErrorResponse(`Upstream error ${upstream.status} ${upstream.statusText}`);
-        }
-      } else {
-        html = await upstream.text();
-        finalUrl = upstream.url;
-      }
+      html = await upstream.text();
+      finalUrl = upstream.url;
     } catch (e) {
-      // Network error — try the browser worker if configured
-      const browserHtml = await tryBrowserWorker(env, targetUrl, {}, siteCookie);
-      if (browserHtml !== null) {
-        html = browserHtml;
-        finalUrl = targetUrl;
-      } else {
-        return frameErrorResponse(`Fetch error: ${e}`);
-      }
+      return frameErrorResponse(`Fetch error: ${e}`);
+
     }
   }
 

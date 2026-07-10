@@ -11,29 +11,6 @@ body {
     sans-serif;
 }
 
-.latex-textsc,
-.textsc {
-  font-variant: small-caps;
-  -moz-font-feature-settings: "smcp" 1;
-  -webkit-font-feature-settings: "smcp" 1;
-  font-feature-settings: "smcp" 1;
-  font-weight: 600;
-  display: inline-block;
-  line-height: 1;
-  vertical-align: baseline;
-  letter-spacing: 0.02em;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-.latex-textsc::first-letter,
-.textsc::first-letter {
-  transform: scale(1.08);
-  display: inline-block;
-  transform-origin: left center;
-  margin-right: 0.02em;
-}
-
 .highlighted-text {
   cursor: pointer;
   padding-left: 2px;

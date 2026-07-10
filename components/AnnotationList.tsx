@@ -1,27 +1,19 @@
-import React, { useCallback, useState } from "react";
-import PromptBox from './PromptBox';
-import Latex from "./Latex";
+"use client";
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "../design-system/button";
+import { IconButton } from "../design-system/icon-button";
+import { Latex } from "../design-system/latex";
+import { Comment, Edit, Save, Times, Trash } from "../app/icons";
+import PromptBox from "./PromptBox";
 import CommentEditor from "./CommentEditor";
 import EmptyState from "./EmptyState";
 import { useAnnotationContextOptional } from "../context/Annotator.context";
-import { useCommentEditing } from "../hooks/AnnotationList.hooks";
 import styles from "../styles/AnnotationList.styles";
-import { shortenHtml } from "../utils/dom";
 
-
-export default function AnnotationList({
-  scrollToAnnotation,
-  mode = 'compact',
-  annotations: annotationsProp,
-  onDeleteAnnotation,
-  onUpdateComment,
-  editingComment,
-  onStartEditingComment,
-  onCancelEditingComment,
-  onSaveComment
-}: {
+type AnnotationListProps = {
   scrollToAnnotation?: (id: string) => void;
-  mode?: 'compact' | 'card';
+  mode?: "compact" | "card";
   annotations?: Annotation[];
   onDeleteAnnotation?: (id: string) => void;
   onUpdateComment?: (id: string, comment: string) => void;
@@ -29,69 +21,108 @@ export default function AnnotationList({
   onStartEditingComment?: (id: string, comment: string) => void;
   onCancelEditingComment?: () => void;
   onSaveComment?: () => void;
-}) {
-  // For card mode (Dashboard), use props. For compact mode, use context.
+};
+
+type PromptState = {
+  message: React.ReactNode;
+  actions: {
+    label: string;
+    action: () => void;
+    variant?: "primary" | "secondary" | "destructive" | "neutral";
+  }[];
+} | null;
+
+function annotationExcerpt(annotation: Annotation): string {
+  const source = annotation.text || annotation.html || "Untitled highlight";
+  const normalized = source.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return "Untitled highlight";
+  if (normalized.length <= 180) return normalized;
+  return `${normalized.slice(0, 177).trimEnd()}…`;
+}
+
+export default function AnnotationList({
+  scrollToAnnotation,
+  mode = "compact",
+  annotations: annotationsProp,
+  onDeleteAnnotation,
+  onUpdateComment,
+  editingComment,
+  onStartEditingComment,
+  onCancelEditingComment,
+  onSaveComment,
+}: AnnotationListProps) {
   const contextData = useAnnotationContextOptional();
   const annotations = annotationsProp ?? contextData?.annotations ?? [];
-
-  const {
-    commentDraft,
-    setCommentDraft,
-    editingCommentId,
-    setEditingCommentId,
-    commentTextareaRef,
-  } = useCommentEditing();
-
-  type PromptState = {
-    message: React.ReactNode;
-    actions: { label: string; action: () => void; variant?: 'primary' | 'secondary' | 'destructive' | 'neutral' }[];
-  } | null;
+  const [commentDraft, setCommentDraft] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [prompt, setPrompt] = useState<PromptState>(null);
-  const [itemStates, setItemStates] = useState<Record<string, { hover: boolean; focus: boolean; buttonHovers: Record<string, boolean> }>>({});
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editingCommentId) return;
+    const textarea = commentTextareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    // Only run when a different editor opens; draft edits must preserve the caret.
+  }, [editingCommentId]);
 
   const handleDeleteAnnotation = useCallback((id: string) => {
     setPrompt({
-      message: 'Are you sure you want to delete this annotation?',
+      message: "Delete this highlight and its note? This action cannot be undone.",
       actions: [
         {
-          label: 'Delete',
+          label: "Delete",
           action: () => {
             if (contextData?.deleteAnnotation) {
               contextData.deleteAnnotation(id);
-            } else if (onDeleteAnnotation) {
-              onDeleteAnnotation(id);
+            } else {
+              onDeleteAnnotation?.(id);
             }
             setPrompt(null);
           },
-          variant: 'destructive'
+          variant: "destructive",
         },
-        { label: 'Cancel', action: () => setPrompt(null), variant: 'neutral' },
-      ]
+        { label: "Cancel", action: () => setPrompt(null), variant: "neutral" },
+      ],
     });
   }, [contextData, onDeleteAnnotation]);
 
   const handleDeleteComment = useCallback((id: string) => {
     setPrompt({
-      message: 'Are you sure you want to delete this comment?',
+      message: "Delete the note attached to this highlight?",
       actions: [
         {
-          label: 'Delete comment',
+          label: "Delete note",
           action: () => {
             if (contextData?.updateAnnotation) {
-              contextData.updateAnnotation({ id, comment: '' });
+              contextData.updateAnnotation({ id, comment: "" });
+            } else {
+              onUpdateComment?.(id, "");
             }
             setPrompt(null);
           },
-          variant: 'destructive'
+          variant: "destructive",
         },
-        { label: 'Cancel', action: () => setPrompt(null), variant: 'neutral' },
-      ]
+        { label: "Cancel", action: () => setPrompt(null), variant: "neutral" },
+      ],
     });
-  }, [contextData]);
+  }, [contextData, onUpdateComment]);
+
+  const startCompactComment = useCallback((annotation: Annotation) => {
+    setEditingCommentId(annotation.id);
+    setCommentDraft(annotation.comment || "");
+  }, [setCommentDraft, setEditingCommentId]);
 
   return (
-    <div style={styles.container} className="annotation-list-container">
+    <div
+      style={styles.container(mode)}
+      className="annotation-list-container"
+      aria-label={mode === "compact" ? "Page annotations" : undefined}
+    >
       {prompt && (
         <PromptBox
           message={prompt.message}
@@ -99,217 +130,197 @@ export default function AnnotationList({
           onClose={() => setPrompt(null)}
         />
       )}
+
       {annotations.length === 0 ? (
-        <EmptyState />
+        <EmptyState mode={mode} />
       ) : (
-        <div style={mode === 'card' ? styles.annotationsWrapper : undefined}>
-          {annotations.map((ann: Annotation) => (
-            <div key={ann.id}>
-              {mode === 'compact' ? (
-                // Compact mode (Sidebar)
-                <div
-                  role={scrollToAnnotation ? "button" : undefined}
-                  tabIndex={scrollToAnnotation ? 0 : undefined}
-                  onClick={scrollToAnnotation ? () => scrollToAnnotation(ann.id) : undefined}
-                  onMouseEnter={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], hover: true } }))}
-                  onMouseLeave={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], hover: false } }))}
-                  onFocus={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], focus: true } }))}
-                  onBlur={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], focus: false } }))}
-                  style={styles.annotationItem(itemStates[ann.id]?.hover, itemStates[ann.id]?.focus)}
-                  title={scrollToAnnotation ? "Scroll to highlight" : undefined}
-                >
-                  <div style={styles.contentContainer}>
-                    <span
-                      aria-hidden
-                      style={styles.colorIndicator(ann.color)}
-                    />
-                    <div>
-                      <Latex>
-                        {shortenHtml(ann.html ?? "No html")}
-                      </Latex>
-                      {ann.comment && (
-                        <div style={styles.comment}>
-                          <Latex>
-                            {ann.comment}
-                          </Latex>
-                        </div>
+        <div
+          style={mode === "card" ? styles.annotationsWrapper : styles.compactList}
+          role="list"
+        >
+          {annotations.map((annotation) => {
+            const isActive = hoveredId === annotation.id || focusedId === annotation.id;
+            const excerpt = annotationExcerpt(annotation);
+
+            if (mode === "compact") {
+              return (
+                <div key={annotation.id} role="listitem">
+                  <article
+                    style={styles.annotationItem(isActive, focusedId === annotation.id)}
+                    onMouseEnter={() => setHoveredId(annotation.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    onFocus={() => setFocusedId(annotation.id)}
+                    onBlur={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setFocusedId(null);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={styles.annotationTarget}
+                      onClick={() => scrollToAnnotation?.(annotation.id)}
+                      disabled={!scrollToAnnotation}
+                      title={scrollToAnnotation ? "Locate highlight on page" : undefined}
+                      aria-label={scrollToAnnotation ? `Locate highlight: ${excerpt}` : undefined}
+                    >
+                      <span aria-hidden="true" style={styles.colorIndicator(annotation.color)} />
+                      <span style={styles.annotationCopy}>
+                        <span style={styles.highlightLabel}>Highlight</span>
+                        <span style={styles.excerpt}>
+                          <Latex>{excerpt}</Latex>
+                        </span>
+                        {annotation.comment && (
+                          <span style={styles.comment}>
+                            <Comment size={11} aria-hidden="true" />
+                            <span style={styles.commentText}>
+                              <Latex>{annotation.comment}</Latex>
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    </button>
+
+                    <div style={styles.actionButtons(isActive)} role="group" aria-label="Annotation actions">
+                      <IconButton
+                        label={annotation.comment ? "Edit note" : "Add note"}
+                        title={annotation.comment ? "Edit note" : "Add note"}
+                        size="small"
+                        onClick={() => startCompactComment(annotation)}
+                      >
+                        <Edit size={11} />
+                      </IconButton>
+                      {annotation.comment && (
+                        <IconButton
+                          label="Delete note"
+                          title="Delete note"
+                          size="small"
+                          onClick={() => handleDeleteComment(annotation.id)}
+                        >
+                          <Comment size={11} />
+                        </IconButton>
                       )}
+                      <IconButton
+                        label="Delete annotation"
+                        title="Delete annotation"
+                        tone="danger"
+                        size="small"
+                        onClick={() => handleDeleteAnnotation(annotation.id)}
+                      >
+                        <Trash size={11} />
+                      </IconButton>
+                    </div>
+                  </article>
+
+                  {editingCommentId === annotation.id && (
+                    <CommentEditor
+                      ann={annotation}
+                      commentDraft={commentDraft}
+                      setCommentDraft={setCommentDraft}
+                      commentTextareaRef={commentTextareaRef as React.RefObject<HTMLTextAreaElement>}
+                      setEditingCommentId={setEditingCommentId}
+                    />
+                  )}
+                </div>
+              );
+            }
+
+            const isEditing = editingComment?.annotationId === annotation.id;
+            return (
+              <article
+                key={annotation.id}
+                role="listitem"
+                style={styles.annotationCard(isActive)}
+                onMouseEnter={() => setHoveredId(annotation.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                onFocus={() => setFocusedId(annotation.id)}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setFocusedId(null);
+                  }
+                }}
+              >
+                <div style={styles.cardHeader}>
+                  <span style={styles.cardMarker(annotation.color)} aria-hidden="true" />
+                  <span style={styles.cardEyebrow}>Saved highlight</span>
+                </div>
+
+                <blockquote style={styles.annotationText(annotation.color)}>
+                  {annotation.html ? (
+                    <Latex>{annotation.html}</Latex>
+                  ) : (
+                    <Latex>{annotation.text || "Untitled highlight"}</Latex>
+                  )}
+                </blockquote>
+
+                {isEditing ? (
+                  <div style={styles.cardEditor}>
+                    <label style={styles.editorLabel} htmlFor={`annotation-note-${annotation.id}`}>
+                      Note
+                    </label>
+                    <textarea
+                      id={`annotation-note-${annotation.id}`}
+                      autoFocus
+                      value={editingComment.comment}
+                      onChange={(event) => onStartEditingComment?.(annotation.id, event.target.value)}
+                      placeholder="Add context, a question, or a reminder…"
+                      style={styles.commentTextarea}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                          event.preventDefault();
+                          onSaveComment?.();
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          onCancelEditingComment?.();
+                        }
+                      }}
+                    />
+                    <div style={styles.editorFooter}>
+                      <span style={styles.editorHint}>Ctrl/⌘ Enter to save · Esc to cancel</span>
+                      <div style={styles.editorActions}>
+                        <Button size="small" variant="ghost" onClick={onCancelEditingComment} leadingIcon={<Times size={10} />}>
+                          Cancel
+                        </Button>
+                        <Button size="small" onClick={onSaveComment} leadingIcon={<Save size={10} />}>
+                          Save note
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <div style={styles.actionButtons(itemStates[ann.id]?.hover)}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); handleDeleteAnnotation(ann.id); }}
-                      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleDeleteAnnotation(ann.id); } }}
-                      onMouseEnter={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], buttonHovers: { ...prev[ann.id]?.buttonHovers, delete: true } } }))}
-                      onMouseLeave={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], buttonHovers: { ...prev[ann.id]?.buttonHovers, delete: false } } }))}
-                      style={styles.deleteAnnotationButton(itemStates[ann.id]?.buttonHovers?.delete)}
-                      title="Delete annotation"
-                      aria-label="Delete annotation"
-                    >
-                      <svg style={{ width: '0.75rem', height: '0.75rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </div>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); setEditingCommentId(ann.id); setCommentDraft(ann.comment || ""); }}
-                      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setEditingCommentId(ann.id); setCommentDraft(ann.comment || ""); } }}
-                      onMouseEnter={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], buttonHovers: { ...prev[ann.id]?.buttonHovers, edit: true } } }))}
-                      onMouseLeave={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], buttonHovers: { ...prev[ann.id]?.buttonHovers, edit: false } } }))}
-                      style={styles.editCommentButton(itemStates[ann.id]?.buttonHovers?.edit)}
-                      title="Edit comment"
-                      aria-label="Edit comment"
-                    >
-                      <svg style={{ width: '0.75rem', height: '0.75rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </div>
-                    {ann.comment && (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); handleDeleteComment(ann.id); }}
-                        onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleDeleteComment(ann.id); } }}
-                        onMouseEnter={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], buttonHovers: { ...prev[ann.id]?.buttonHovers, deleteComment: true } } }))}
-                        onMouseLeave={() => setItemStates(prev => ({ ...prev, [ann.id]: { ...prev[ann.id], buttonHovers: { ...prev[ann.id]?.buttonHovers, deleteComment: false } } }))}
-                        style={styles.deleteCommentButton(itemStates[ann.id]?.buttonHovers?.deleteComment)}
-                        title="Delete comment"
-                        aria-label="Delete comment"
+                ) : annotation.comment ? (
+                  <div style={styles.cardCommentSection}>
+                    <span style={styles.cardCommentIcon} aria-hidden="true"><Comment size={12} /></span>
+                    <p style={styles.cardCommentText}>{annotation.comment}</p>
+                  </div>
+                ) : null}
+
+                {!isEditing && (
+                  <div style={styles.annotationActions}>
+                    {onStartEditingComment && (
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        leadingIcon={<Edit size={10} />}
+                        onClick={() => onStartEditingComment(annotation.id, annotation.comment || "")}
                       >
-                        <svg style={{ width: '0.75rem', height: '0.75rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                      </div>
+                        {annotation.comment ? "Edit note" : "Add note"}
+                      </Button>
+                    )}
+                    {onDeleteAnnotation && (
+                      <Button
+                        size="small"
+                        variant="danger"
+                        leadingIcon={<Trash size={10} />}
+                        onClick={() => onDeleteAnnotation(annotation.id)}
+                      >
+                        Delete
+                      </Button>
                     )}
                   </div>
-                </div>
-              ) : (
-                // Card mode (Dashboard)
-                <div
-                  style={styles.annotationCard(false)}
-                  onMouseEnter={(e) => e.currentTarget.style.boxShadow = styles.annotationCardHover as string}
-                  onMouseLeave={(e) => e.currentTarget.style.boxShadow = (styles.annotationCard(false).boxShadow as string)}
-                >
-                  <div style={styles.annotationContent}>
-                    <div style={styles.cardColorIndicator(ann.color || "#ffff00")} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={styles.annotationText(ann.color || "#ffff00", false)}>
-                        {ann.html ? (
-                          <Latex>{ann.html}</Latex>
-                        ) : (
-                          <p>{ann.text}</p>
-                        )}
-                      </div>
-
-                      {editingComment?.annotationId === ann.id ? (
-                        <div style={styles.cardCommentSection}>
-                          <div style={styles.editCommentContainer}>
-                            <textarea
-                              value={editingComment.comment}
-                              onChange={(e) => onStartEditingComment?.(ann.id, e.target.value)}
-                              placeholder="Add a comment..."
-                              style={styles.commentTextarea}
-                              onFocus={(e) => e.currentTarget.style.boxShadow = (styles.commentTextareaFocus.boxShadow as string)}
-                              onBlur={(e) => e.currentTarget.style.boxShadow = 'none'}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && e.ctrlKey) {
-                                  onSaveComment?.();
-                                } else if (e.key === 'Escape') {
-                                  onCancelEditingComment?.();
-                                }
-                              }}
-                            />
-                            <div style={styles.commentButtons}>
-                              <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onSaveComment?.(); }}
-                                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSaveComment?.(); } }}
-                                style={styles.saveButton}
-                                onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.saveButtonHover.backgroundColor as string)}
-                                onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.saveButton.backgroundColor as string)}
-                                title="Save comment (Ctrl+Enter)"
-                              >
-                                <svg style={{ width: '1rem', height: '1rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                              </div>
-                              <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onCancelEditingComment?.(); }}
-                                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onCancelEditingComment?.(); } }}
-                                style={styles.cancelButton}
-                                onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.cancelButtonHover.backgroundColor as string)}
-                                onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.cancelButton.backgroundColor as string)}
-                                title="Cancel editing (Escape)"
-                              >
-                                <svg style={{ width: '1rem', height: '1rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        ann.comment && (
-                          <div style={styles.cardCommentSection}>
-                            <p style={styles.cardCommentText}>
-                              {ann.comment}
-                            </p>
-                          </div>
-                        )
-                      )}
-
-                      <div style={styles.annotationActions}>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onStartEditingComment?.(ann.id, ann.comment || ''); }}
-                          onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onStartEditingComment?.(ann.id, ann.comment || ''); } }}
-                          style={styles.editCommentButtonCard}
-                          onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.editCommentButtonCardHover.backgroundColor as string)}
-                          onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.editCommentButtonCard.backgroundColor as string)}
-                        >
-                          <svg style={{ width: '0.75rem', height: '0.75rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                          {ann.comment ? 'Edit Comment' : 'Add Comment'}
-                        </div>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onDeleteAnnotation?.(ann.id); }}
-                          onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onDeleteAnnotation?.(ann.id); } }}
-                          style={styles.deleteAnnotationButtonCard}
-                          onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.deleteAnnotationButtonCardHover.backgroundColor as string)}
-                          onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.backgroundColor = (styles.deleteAnnotationButtonCard.backgroundColor as string)}
-                        >
-                          <svg style={{ width: '0.75rem', height: '0.75rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          Delete
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {mode === 'compact' && editingCommentId === ann.id && (
-                <CommentEditor
-                  ann={ann}
-                  commentDraft={commentDraft}
-                  setCommentDraft={setCommentDraft}
-                  commentTextareaRef={commentTextareaRef as React.RefObject<HTMLTextAreaElement>}
-                  setEditingCommentId={setEditingCommentId}
-                />
-              )}
-            </div>
-          ))}
+                )}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

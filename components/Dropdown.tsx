@@ -1,63 +1,35 @@
-import React, { useState } from 'react';
-import dropdownStyles from '../styles/Dropdown.styles';
-import { useDropdown } from '../hooks/Dropdown.hooks';
+import type { ReactNode } from 'react';
+import { Select, type SelectOption } from '../design-system/select';
 
-interface DropdownOption<T = string> {
-  value: T;
-  label: string;
-}
+type DropdownOption<T extends string = string> = SelectOption<T>;
 
-interface DropdownProps<T = string> {
-  options: DropdownOption<T>[];
+interface DropdownProps<T extends string = string> {
+  options: ReadonlyArray<DropdownOption<T>>;
   value: T;
   onChange: (value: T) => void;
-  buttonContent: React.ReactNode;
+  buttonContent: ReactNode;
   className?: string;
   ariaLabel?: string;
 }
 
-function Dropdown<T = string>({ options, value, onChange, buttonContent, className = '', ariaLabel }: DropdownProps<T>) {
-  const [buttonHover, setButtonHover] = useState(false);
-  const [buttonFocus, setButtonFocus] = useState(false);
-  const [itemHovers, setItemHovers] = useState<Record<number, boolean>>({});
-  const [itemFocuses, setItemFocuses] = useState<Record<number, boolean>>({});
-  const { open, setOpen, ref } = useDropdown();
-
+function Dropdown<T extends string = string>({
+  options,
+  value,
+  onChange,
+  buttonContent,
+  className,
+  ariaLabel,
+}: DropdownProps<T>) {
   return (
-    <div style={dropdownStyles.container} className={className} ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        onMouseEnter={() => setButtonHover(true)}
-        onMouseLeave={() => setButtonHover(false)}
-        onFocus={() => setButtonFocus(true)}
-        onBlur={() => setButtonFocus(false)}
-        style={dropdownStyles.button(buttonHover, buttonFocus)}
-        aria-label={ariaLabel}
-      >
-        {buttonContent}
-      </button>
-      {open && (
-        <div style={dropdownStyles.menu}>
-          {options.map((option, index) => (
-            <div
-              key={String(option.value)}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-              onMouseEnter={() => setItemHovers(prev => ({ ...prev, [index]: true }))}
-              onMouseLeave={() => setItemHovers(prev => ({ ...prev, [index]: false }))}
-              onFocus={() => setItemFocuses(prev => ({ ...prev, [index]: true }))}
-              onBlur={() => setItemFocuses(prev => ({ ...prev, [index]: false }))}
-              style={dropdownStyles.menuItem(itemHovers[index], itemFocuses[index])}
-            >
-              {option.label}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <Select
+      options={options}
+      value={value}
+      onValueChange={onChange}
+      triggerContent={buttonContent}
+      ariaLabel={ariaLabel}
+      className={className}
+      size="small"
+    />
   );
 }
 

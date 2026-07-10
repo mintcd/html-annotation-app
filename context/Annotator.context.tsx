@@ -1,14 +1,18 @@
 "use client";
 
 import { createContext, useContext, ReactNode } from "react";
-import { useCallback, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { removeHighlights } from "../utils/dom";
-import repository from "../utils/repository";
-import { eq } from "../utils/QueryBuilder";
+import { eq, useSyncStatus } from "@mintcd/sync-engine";
+import { db } from "../utils/engine";
+import { ensurePage, syncTimestamp } from "../utils/syncData";
+
+type AnnotationPosition = NonNullable<Annotation['position']>;
 
 type AnnotationContextProps = {
   children: ReactNode;
   initialAnnotations?: Annotation[];
+  pageId: string;
   pageUrl: string;
   title?: string;
   contentRef: React.RefObject<HTMLElement>;
@@ -30,7 +34,7 @@ type AnnotationContextType = {
   title?: string;
   currentHighlightColor: string;
   setCurrentHighlightColor: React.Dispatch<React.SetStateAction<string>>;
-  addAnnotation: (payload: { text: string, html: string, color: string, path?: number[] | null }) => Promise<{ tempId: string; promise: Promise<string> }>;
+  addAnnotation: (payload: { text: string; html: string; color: string; position?: AnnotationPosition }) => Promise<{ tempId: string; promise: Promise<string> }>;
   deleteAnnotation: (id: string) => void;
   updateAnnotation: (params: { id: string; comment?: string; color?: string; text?: string; html?: string }) => void;
   syncStatus: 'synced' | 'syncing' | 'to-sync';
@@ -54,6 +58,7 @@ export function useAnnotationContextOptional(): AnnotationContextType | null {
 export function AnnotationContext({
   children,
   initialAnnotations = [],
+  pageId,
   pageUrl,
   title,
   contentRef,
@@ -63,42 +68,55 @@ export function AnnotationContext({
 }: AnnotationContextProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [currentHighlightColor, setCurrentHighlightColor] = useState<string>("#87ceeb");
-  const [pendingOperations, setPendingOperations] = useState<Array<{ type: 'create' | 'update' | 'delete', annotation: Annotation }>>([]);
   const [lastAutoSaveStatus, setLastAutoSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sync = useSyncStatus();
 
-  const addAnnotation = useCallback(async (payload: { text: string, html: string, color: string, position?: { startPosition: number, endPosition: number, startOffset: number, endOffset: number } }): Promise<{ tempId: string; promise: Promise<string> }> => {
+  useEffect(() => {
+    setAnnotations(initialAnnotations);
+  }, [initialAnnotations]);
+
+  const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position?: AnnotationPosition }): Promise<{ tempId: string; promise: Promise<string> }> => {
     const { text, html, color, position } = payload;
-    const tempId = `temp-${Date.now()}`;
-    const now = Date.now().toString();
+    const tempId = crypto.randomUUID();
+    const now = syncTimestamp();
     const tempAnnotation: Annotation = {
-      page_id: pageUrl,
+      page_id: pageId,
       id: tempId,
       text,
       color,
       created_at: now,
       updated_at: now,
       html,
+      position,
     };
-    // Add temporary annotation to show immediately in UI
     setAnnotations(prev => [...prev, tempAnnotation]);
 
-    // Return temp ID immediately and a promise for the final ID
     const promise = (async () => {
       try {
-        // Only update the page title if it already exists and we have a real title.
-        // Dashboard is responsible for creating pages.
+        await ensurePage(pageUrl, title ?? '');
+
         if (title) {
-          const existingPages: any[] = await repository.select('id', 'title').from('pages').where(eq('url', pageUrl));
+          const existingPages = await db.select('id', 'title').from('pages').where(eq('id', pageId)).execute();
           const existingPage = existingPages && existingPages.length ? existingPages[0] : null;
           if (existingPage && existingPage.title !== title) {
-            await repository.update({ title }).from('pages').where(eq('url', pageUrl));
+            await db.update({ title, updated_at: syncTimestamp() })
+              .from('pages')
+              .where(eq('id', pageId))
+              .execute();
           }
         }
 
-        // Create annotation locally and queue for remote sync
-        await repository.insert({ id: tempId, page_id: pageUrl, text, html, color, created_at: Date.now(), updated_at: Date.now(), position }).from('annotations');
+        await db.insert({
+          id: tempId,
+          page_id: pageId,
+          text,
+          html: html || null,
+          color,
+          comment: null,
+          created_at: now,
+          updated_at: now,
+          position: position ?? null,
+        }).from('annotations').execute();
 
         setLastAutoSaveStatus({ success: true, message: "Annotation queued (offline-first)" });
         return tempId;
@@ -106,23 +124,20 @@ export function AnnotationContext({
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         setLastAutoSaveStatus({ success: false, message: errorMessage });
         console.error("Failed to queue annotation:", error);
-        // Remove temp annotation on failure
         setAnnotations(prev => prev.filter(ann => ann.id !== tempId));
         throw error;
       }
     })();
 
     return { tempId, promise };
-  }, [pageUrl, title]);
+  }, [pageId, pageUrl, title]);
 
   const deleteAnnotation = useCallback(async (id: string) => {
-    if (!contentRef.current) return;
-    removeHighlights(contentRef.current, id);
+    if (contentRef.current) removeHighlights(contentRef.current, id);
     setAnnotations(prev => prev.filter((a) => a.id !== id));
 
-    // Queue delete operation locally
     try {
-      await repository.delete().from('annotations').where(eq('id', id));
+      await db.delete().from('annotations').where(eq('id', id)).execute();
       setLastAutoSaveStatus({ success: true, message: "Annotation delete queued" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -144,11 +159,8 @@ export function AnnotationContext({
       });
     }
 
-    let currentAnnotation: Annotation | undefined;
-
     setAnnotations(prev => prev.map(ann => {
       if (ann.id !== id) return ann;
-      currentAnnotation = ann; // Capture current annotation before update
       const updated: Annotation = { ...ann, lastModified: Date.now() } as Annotation;
       if (comment !== undefined) updated.comment = comment.trim() || undefined;
       if (color !== undefined) updated.color = color;
@@ -157,17 +169,14 @@ export function AnnotationContext({
       return updated;
     }));
 
-    // Immediately update in API
     try {
-      if (currentAnnotation) {
-        const changes: any = {};
-        if (text !== undefined) changes.text = text;
-        if (html !== undefined) changes.html = html;
-        if (color !== undefined) changes.color = color;
-        if (comment !== undefined) changes.comment = comment !== '' ? comment : null;
-        await repository.update({ ...(changes as any) }).from('annotations').where(eq('id', id));
-        setLastAutoSaveStatus({ success: true, message: "Annotation update queued" });
-      }
+      const changes: Record<string, unknown> = { updated_at: syncTimestamp() };
+      if (text !== undefined) changes.text = text;
+      if (html !== undefined) changes.html = html;
+      if (color !== undefined) changes.color = color;
+      if (comment !== undefined) changes.comment = comment !== '' ? comment : null;
+      await db.update(changes).from('annotations').where(eq('id', id)).execute();
+      setLastAutoSaveStatus({ success: true, message: "Annotation update queued" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setLastAutoSaveStatus({ success: false, message: errorMessage });
@@ -175,12 +184,11 @@ export function AnnotationContext({
     }
   }, [contentRef]);
 
-  // Compute sync status based on pending operations
   const syncStatus = useMemo<'synced' | 'syncing' | 'to-sync'>(() => {
-    if (isSyncing) return 'syncing';
-    if (pendingOperations.length > 0) return 'to-sync';
+    if (sync.isSyncing) return 'syncing';
+    if (sync.status === 'error' || sync.status === 'offline' || (sync.pendingCount ?? 0) > 0) return 'to-sync';
     return 'synced';
-  }, [isSyncing, pendingOperations]);
+  }, [sync.isSyncing, sync.pendingCount, sync.status]);
 
   const value = useMemo(() => ({
     contentRef,

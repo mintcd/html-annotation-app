@@ -27,6 +27,15 @@ function toAbsolute(resource: string, base: string) {
 export default function ClientFrame({ frameUrl, preload = true, className, iframeProps, frameRef }: ClientFrameProps) {
   const internalRef = useRef<HTMLIFrameElement | null>(null);
   const iframeRef = (iframeProps && (iframeProps as any).ref) || (frameRef as any) || internalRef;
+  const { onLoad, ...restIframeProps } = iframeProps ?? {};
+
+  const handleLoad = (event: React.SyntheticEvent<HTMLIFrameElement>) => {
+    // An iframe without a src emits an initial load event for about:blank.
+    // The real src is assigned after preloading, so do not report that empty
+    // document as ready to consumers.
+    if (!event.currentTarget.getAttribute('src')) return;
+    onLoad?.(event);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +115,13 @@ export default function ClientFrame({ frameUrl, preload = true, className, ifram
 
   return (
     <div className={className} style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <iframe ref={iframeRef as any} style={{ width: '100%', height: '100%', border: 0 }} sandbox="allow-scripts allow-same-origin allow-forms" {...iframeProps} />
+      <iframe
+        ref={iframeRef as any}
+        style={{ width: '100%', height: '100%', border: 0 }}
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        {...restIframeProps}
+        onLoad={handleLoad}
+      />
     </div>
   );
 }

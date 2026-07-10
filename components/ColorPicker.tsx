@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkey, useMobile } from "../hooks";
 import colorPickerStyles from "../styles/ColorPicker.styles";
 import { highlightBoundingRect } from "../utils/highlight";
@@ -36,52 +36,115 @@ export default function ColorPicker({
   anchorRect,
   anchorId,
 }: ColorPickerProps) {
-  const { viewportInfo } = useMobile();
+  const { isMobile, viewportInfo } = useMobile();
+  const [activeColor, setActiveColor] = useState<string | null>(null);
+  const colorButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
   const annotationCtx = useAnnotationContextOptional();
-  const iframeDoc = annotationCtx?.contentRef.current?.ownerDocument ?? document;
+  const iframeDoc = annotationCtx?.contentRef.current?.ownerDocument
+    ?? (typeof document !== 'undefined' ? document : null);
 
   const computedAnchorRect = useMemo(() => {
     if (!anchorId) return anchorRect ?? null;
-    return highlightBoundingRect(anchorId, iframeDoc);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anchorId, anchorRect, iframeDoc]);
+    if (!iframeDoc) return anchorRect ?? null;
+
+    try {
+      const rect = highlightBoundingRect(anchorId, iframeDoc);
+      const iframeRect = annotationCtx?.iframeRef.current?.getBoundingClientRect();
+      return {
+        top: rect.top + (iframeRect?.top ?? 0),
+        bottom: rect.bottom + (iframeRect?.top ?? 0),
+        left: rect.left + (iframeRect?.left ?? 0),
+        right: rect.right + (iframeRect?.left ?? 0),
+        width: rect.width,
+        height: rect.height,
+      };
+    } catch {
+      return anchorRect ?? null;
+    }
+  }, [anchorId, anchorRect, annotationCtx?.iframeRef, iframeDoc]);
+
+  useEffect(() => {
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const selectedIndex = Math.max(0, HIGHLIGHT_COLORS.findIndex((color) => color.value === currentColor));
+    const frame = window.requestAnimationFrame(() => colorButtonRefs.current[selectedIndex]?.focus());
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (previouslyFocused.current?.isConnected) previouslyFocused.current.focus();
+    };
+  }, [currentColor]);
 
   useHotkey((e) => e.key === 'Escape', onClose);
 
+  const handleColorKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (index + 1) % HIGHLIGHT_COLORS.length;
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (index - 1 + HIGHLIGHT_COLORS.length) % HIGHLIGHT_COLORS.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = HIGHLIGHT_COLORS.length - 1;
+    } else if (event.key === 'Tab') {
+      nextIndex = event.shiftKey
+        ? (index - 1 + HIGHLIGHT_COLORS.length) % HIGHLIGHT_COLORS.length
+        : (index + 1) % HIGHLIGHT_COLORS.length;
+    }
+
+    if (nextIndex !== null) {
+      event.preventDefault();
+      colorButtonRefs.current[nextIndex]?.focus();
+    }
+  };
+
   return (
     <>
-      {/* Backdrop to close when clicking outside */}
-      <div
+      <button
+        type="button"
+        aria-label="Close color picker"
+        tabIndex={-1}
         style={colorPickerStyles.backdrop}
         onClick={onClose}
       />
 
-      {/* Color picker panel */}
       <div
         role="dialog"
-        aria-label="Color picker"
-        onMouseDown={(e) => e.preventDefault()}
-        onPointerDown={(e) => e.preventDefault()}
-        style={colorPickerStyles.panel(viewportInfo, computedAnchorRect)}
+        aria-modal="true"
+        aria-labelledby="highlight-color-title"
+        style={colorPickerStyles.panel(viewportInfo, computedAnchorRect, isMobile)}
       >
-        {HIGHLIGHT_COLORS.map((color) => (
-          <button
-            key={color.value}
-            type="button"
-            onClick={() => onColorSelect(color.value)}
-            title={`${color.name} highlight`}
-            style={colorPickerStyles.colorButton(color.value, currentColor === color.value)}
-            onMouseEnter={(e) => {
-              Object.assign(e.currentTarget.style, colorPickerStyles.colorButtonHover(currentColor === color.value));
-            }}
-            onMouseLeave={(e) => {
-              Object.assign(e.currentTarget.style, colorPickerStyles.colorButtonLeave(currentColor === color.value));
-            }}
-            aria-label={`Select ${color.name} color`}
-            aria-pressed={currentColor === color.value}
-          >
-          </button>
-        ))}
+        <div style={colorPickerStyles.header}>
+          <span id="highlight-color-title" style={colorPickerStyles.title}>Highlight color</span>
+          <span style={colorPickerStyles.hint}>Choose a color</span>
+        </div>
+        <div role="radiogroup" aria-label="Highlight colors" style={colorPickerStyles.colorGrid}>
+          {HIGHLIGHT_COLORS.map((color, index) => {
+            const isSelected = currentColor === color.value;
+            return (
+              <button
+                ref={(element) => { colorButtonRefs.current[index] = element; }}
+                key={color.value}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                tabIndex={isSelected || (!currentColor && index === 0) ? 0 : -1}
+                onClick={() => onColorSelect(color.value)}
+                onKeyDown={(event) => handleColorKeyDown(event, index)}
+                onPointerEnter={() => setActiveColor(color.value)}
+                onPointerLeave={() => setActiveColor(null)}
+                onFocus={() => setActiveColor(color.value)}
+                onBlur={() => setActiveColor(null)}
+                title={`${color.name} highlight`}
+                style={colorPickerStyles.colorButton(color.value, isSelected, activeColor === color.value, isMobile)}
+                aria-label={`${color.name}${isSelected ? ', selected' : ''}`}
+              >
+                {isSelected && <span style={colorPickerStyles.checkmark} aria-hidden="true">✓</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </>
   );

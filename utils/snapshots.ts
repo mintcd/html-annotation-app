@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import localDb from './db/indexedDB';
+import { getSnapshotRow, listSnapshotRowsForUrl, putSnapshot } from './snapshotStore';
 
 type CaptureOpts = {
   iframeRef?: RefObject<HTMLIFrameElement | null>;
@@ -382,20 +382,20 @@ export async function captureAndStoreSnapshot(opts: CaptureOpts): Promise<string
     return `/__snapshot_asset__/${id}/${encodeURIComponent(abs)}`;
   }
 
-  await localDb.putRow('snapshots' as any, {
+  await putSnapshot({
     id,
     url,
     title,
     html,
     resources,
     created_at: Date.now(),
-  } as any);
+  });
 
   return id;
 }
 
 export async function getSnapshot(id: string) {
-  return await localDb.getRow('snapshots' as any, id);
+  return getSnapshotRow(id);
 }
 
 export async function getSnapshotHtml(id: string): Promise<string | undefined> {
@@ -404,11 +404,5 @@ export async function getSnapshotHtml(id: string): Promise<string | undefined> {
 }
 
 export async function listSnapshotsForUrl(url: string) {
-  try {
-    return await localDb.queryIndex('snapshots' as any, 'by_url', url) as any[];
-  } catch (e) {
-    // Fallback to scanning all
-    const all = await localDb.getAllRows('snapshots' as any);
-    return all.filter(s => (s as any).url === url);
-  }
+  return listSnapshotRowsForUrl(url);
 }

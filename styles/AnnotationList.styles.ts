@@ -1,231 +1,300 @@
+function highlightTint(color?: string, opacity = 0.13): string {
+  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(color || "");
+  if (!match) return `rgba(147, 197, 253, ${opacity})`;
+  const [, red, green, blue] = match;
+  return `rgba(${Number.parseInt(red, 16)}, ${Number.parseInt(green, 16)}, ${Number.parseInt(blue, 16)}, ${opacity})`;
+}
+
 const annotationListStyles = {
-  container: {
-    overflowY: 'auto' as const,
-    padding: '0.5rem',
-    touchAction: 'pan-y',
+  container: (mode: "compact" | "card"): React.CSSProperties => ({
+    flex: mode === "compact" ? 1 : undefined,
+    minHeight: 0,
+    overflowY: mode === "compact" ? "auto" : undefined,
+    padding: mode === "compact" ? "var(--ds-space-3)" : 0,
+    touchAction: "pan-y",
+    scrollbarWidth: "thin",
+    scrollbarColor: "var(--ds-color-border-strong) transparent",
+  }),
+
+  compactList: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "var(--ds-space-2)",
   },
 
   annotationsWrapper: {
-    maxWidth: '56rem',
-    margin: '0 auto',
-    display: 'flex' as const,
-    flexDirection: 'column' as const,
-    gap: '1rem',
+    width: "100%",
+    maxWidth: "56rem",
+    margin: "0 auto",
+    display: "grid",
+    gap: "var(--ds-space-4)",
   },
 
-  annotationItem: (hover: boolean, focus: boolean): React.CSSProperties => ({
-    borderRadius: '0.5rem',
-    border: `1px solid ${hover ? '#93c5fd' : '#e5e7eb'}`,
-    background: 'linear-gradient(to bottom right, white, #f9fafb)',
-    padding: '0.5rem 0.75rem',
-    textAlign: 'left',
-    boxShadow: focus ? '0 0 0 2px #3b82f6' : (hover ? '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.05)' : '0 1px 2px 0 rgba(0,0,0,0.05)'),
-    outline: 'none',
-    transition: 'all 0.2s',
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: '0.25rem',
+  annotationItem: (active: boolean, focused: boolean): React.CSSProperties => ({
+    position: "relative",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    alignItems: "start",
+    gap: "var(--ds-space-2)",
+    padding: "var(--ds-space-2)",
+    border: `1px solid ${active ? "var(--ds-color-blue-200)" : "var(--ds-color-border)"}`,
+    borderRadius: "var(--ds-radius-xl)",
+    background: active
+      ? "linear-gradient(145deg, var(--ds-color-surface), var(--ds-color-blue-50))"
+      : "var(--ds-color-surface)",
+    boxShadow: focused
+      ? "var(--ds-focus-ring), var(--ds-shadow-md)"
+      : active
+        ? "var(--ds-shadow-md)"
+        : "var(--ds-shadow-sm)",
+    transition: [
+      "border-color var(--ds-motion-normal) var(--ds-ease-standard)",
+      "background var(--ds-motion-normal) var(--ds-ease-standard)",
+      "box-shadow var(--ds-motion-normal) var(--ds-ease-standard)",
+      "transform var(--ds-motion-normal) var(--ds-ease-standard)",
+    ].join(", "),
+    transform: active ? "translateY(-1px)" : "none",
   }),
+
+  annotationTarget: {
+    minWidth: 0,
+    display: "flex",
+    alignItems: "stretch",
+    gap: "var(--ds-space-3)",
+    margin: 0,
+    padding: "var(--ds-space-1)",
+    border: 0,
+    borderRadius: "var(--ds-radius-lg)",
+    color: "inherit",
+    background: "transparent",
+    font: "inherit",
+    textAlign: "left" as const,
+    cursor: "pointer",
+    outline: "none",
+  },
 
   colorIndicator: (color?: string): React.CSSProperties => ({
-    marginTop: '0.25rem',
-    display: 'inline-block' as const,
-    height: '0.625rem',
-    width: '0.625rem',
-    borderRadius: '9999px',
-    flexShrink: 0,
-    backgroundColor: color ?? "#87ceeb",
-    willChange: "auto" as const
+    width: 4,
+    minHeight: 54,
+    flex: "0 0 auto",
+    borderRadius: "var(--ds-radius-full)",
+    backgroundColor: color || "var(--ds-color-blue-300)",
+    boxShadow: `0 0 0 4px ${highlightTint(color, 0.12)}`,
   }),
 
-  contentContainer: {
-    display: 'flex' as const,
-    alignItems: 'flex-start' as const,
-    gap: '0.5rem'
+  annotationCopy: {
+    minWidth: 0,
+    display: "flex",
+    flex: 1,
+    flexDirection: "column" as const,
+    alignItems: "flex-start",
+  },
+
+  highlightLabel: {
+    marginBottom: 3,
+    color: "var(--ds-color-primary)",
+    fontSize: "0.625rem",
+    fontWeight: "var(--ds-font-weight-bold)",
+    letterSpacing: "0.075em",
+    lineHeight: 1.3,
+    textTransform: "uppercase" as const,
+  },
+
+  excerpt: {
+    width: "100%",
+    overflow: "hidden",
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical" as const,
+    WebkitLineClamp: 3,
+    color: "var(--ds-color-text)",
+    fontSize: "var(--ds-font-size-xs)",
+    fontWeight: "var(--ds-font-weight-medium)",
+    lineHeight: "var(--ds-line-height-relaxed)",
   },
 
   comment: {
-    marginTop: '0.25rem',
-    fontSize: '0.75rem',
-    color: '#4b5563',
-    display: '-webkit-box' as const,
+    width: "100%",
+    minWidth: 0,
+    marginTop: "var(--ds-space-2)",
+    padding: "0.4rem 0.5rem",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "var(--ds-space-2)",
+    borderRadius: "var(--ds-radius-md)",
+    color: "var(--ds-color-text-secondary)",
+    background: "var(--ds-color-surface-subtle)",
+    fontSize: "0.6875rem",
+    lineHeight: "var(--ds-line-height-normal)",
+  },
+
+  commentText: {
+    minWidth: 0,
+    overflow: "hidden",
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical" as const,
     WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical' as const,
-    overflow: 'hidden' as const
   },
 
-  actionButtons: (hover: boolean): React.CSSProperties => ({
-    display: 'flex' as const,
-    flexDirection: 'column' as const,
-    gap: '0.25rem',
-    opacity: hover ? 1 : 0,
-    transition: 'opacity 0.2s'
+  actionButtons: (visible: boolean): React.CSSProperties => ({
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--ds-space-1)",
+    opacity: visible ? 1 : 0,
+    transform: visible ? "translateX(0)" : "translateX(4px)",
+    transition: [
+      "opacity var(--ds-motion-fast) var(--ds-ease-standard)",
+      "transform var(--ds-motion-fast) var(--ds-ease-standard)",
+    ].join(", "),
   }),
 
-  deleteAnnotationButton: (hover: boolean): React.CSSProperties => ({
-    color: hover ? '#b91c1c' : '#ef4444',
-    padding: '0.25rem',
-    borderRadius: '0.25rem',
-    transition: 'color 0.2s'
+  annotationCard: (active: boolean): React.CSSProperties => ({
+    position: "relative",
+    overflow: "hidden",
+    padding: "clamp(1rem, 2vw, 1.35rem)",
+    border: `1px solid ${active ? "var(--ds-color-blue-200)" : "var(--ds-color-border)"}`,
+    borderRadius: "var(--ds-radius-xl)",
+    color: "var(--ds-color-text)",
+    background: "var(--ds-color-surface)",
+    boxShadow: active ? "var(--ds-shadow-md)" : "var(--ds-shadow-sm)",
+    transform: active ? "translateY(-2px)" : "none",
+    transition: [
+      "border-color var(--ds-motion-normal) var(--ds-ease-standard)",
+      "box-shadow var(--ds-motion-normal) var(--ds-ease-standard)",
+      "transform var(--ds-motion-normal) var(--ds-ease-standard)",
+    ].join(", "),
   }),
 
-  editCommentButton: (hover: boolean): React.CSSProperties => ({
-    color: hover ? '#1d4ed8' : '#3b82f6',
-    padding: '0.25rem',
-    borderRadius: '0.25rem',
-    transition: 'color 0.2s'
-  }),
-
-  deleteCommentButton: (hover: boolean): React.CSSProperties => ({
-    color: hover ? '#c2410c' : '#f97316',
-    padding: '0.25rem',
-    borderRadius: '0.25rem',
-    transition: 'color 0.2s'
-  }),
-
-  // Card mode styles (for Dashboard)
-  annotationCard: (isMobile: boolean): React.CSSProperties => ({
-    backgroundColor: 'white',
-    borderRadius: '0.5rem',
-    border: '1px solid #E5E7EB',
-    boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)',
-    padding: isMobile ? '1rem' : '1.25rem',
-    transition: 'box-shadow 200ms',
-  }),
-
-  annotationCardHover: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
-
-  annotationContent: {
-    display: 'flex' as const,
-    alignItems: 'flex-start' as const,
-    gap: '0.75rem'
+  cardHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--ds-space-2)",
+    marginBottom: "var(--ds-space-3)",
   },
 
-  cardColorIndicator: (color: string): React.CSSProperties => ({
-    width: '0.25rem',
-    height: '100%',
-    borderRadius: '9999px',
-    flexShrink: 0,
-    marginTop: '0.25rem',
-    backgroundColor: color || '#ffff00',
+  cardMarker: (color?: string): React.CSSProperties => ({
+    width: 10,
+    height: 10,
+    border: "2px solid var(--ds-color-surface)",
+    borderRadius: "var(--ds-radius-full)",
+    background: color || "var(--ds-color-blue-300)",
+    boxShadow: `0 0 0 3px ${highlightTint(color, 0.2)}`,
   }),
 
-  annotationText: (color: string, isMobile: boolean): React.CSSProperties => ({
-    color: '#111827',
-    marginBottom: '0.5rem',
-    lineHeight: 1.625,
-    fontSize: isMobile ? '0.875rem' : '1rem',
-    backgroundColor: color ? `rgba(${[color.slice(1, 3), color.slice(3, 5), color.slice(5, 7)].map(x => parseInt(x, 16)).join(', ')}, 0.2)` : 'rgba(255,255,0,0.2)',
-    padding: isMobile ? '6px 10px' : '8px 12px',
-    borderRadius: '4px',
-    borderLeft: `3px solid ${color}`,
+  cardEyebrow: {
+    color: "var(--ds-color-text-tertiary)",
+    fontSize: "0.65rem",
+    fontWeight: "var(--ds-font-weight-bold)",
+    letterSpacing: "0.09em",
+    textTransform: "uppercase" as const,
+  },
+
+  annotationText: (color?: string): React.CSSProperties => ({
+    position: "relative",
+    margin: 0,
+    padding: "var(--ds-space-4) var(--ds-space-5)",
+    border: 0,
+    borderLeft: `3px solid ${color || "var(--ds-color-blue-300)"}`,
+    borderRadius: "0 var(--ds-radius-lg) var(--ds-radius-lg) 0",
+    color: "var(--ds-color-text)",
+    background: `linear-gradient(90deg, ${highlightTint(color, 0.18)}, ${highlightTint(color, 0.07)})`,
+    fontSize: "clamp(0.875rem, 1.5vw, 1rem)",
+    fontWeight: "var(--ds-font-weight-medium)",
+    lineHeight: "var(--ds-line-height-relaxed)",
   }),
 
   cardCommentSection: {
-    marginTop: '0.75rem',
-    paddingLeft: '0.75rem',
-    borderLeft: '2px solid #D1D5DB',
+    marginTop: "var(--ds-space-4)",
+    padding: "var(--ds-space-3)",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "var(--ds-space-2)",
+    border: "1px solid var(--ds-color-border)",
+    borderRadius: "var(--ds-radius-lg)",
+    background: "var(--ds-color-surface-subtle)",
+  },
+
+  cardCommentIcon: {
+    width: 28,
+    height: 28,
+    flex: "0 0 auto",
+    display: "inline-grid",
+    placeItems: "center",
+    borderRadius: "var(--ds-radius-md)",
+    color: "var(--ds-color-primary)",
+    background: "var(--ds-color-primary-soft)",
   },
 
   cardCommentText: {
-    fontSize: '0.875rem',
-    color: '#374151',
-    fontStyle: 'italic',
+    margin: 0,
+    paddingTop: 3,
+    color: "var(--ds-color-text-secondary)",
+    fontSize: "var(--ds-font-size-sm)",
+    lineHeight: "var(--ds-line-height-normal)",
+    whiteSpace: "pre-wrap" as const,
   },
 
-  editCommentContainer: {
-    display: 'flex' as const,
-    gap: '0.5rem',
-    marginBottom: '0.5rem',
+  cardEditor: {
+    marginTop: "var(--ds-space-4)",
+    padding: "var(--ds-space-3)",
+    border: "1px solid var(--ds-color-blue-200)",
+    borderRadius: "var(--ds-radius-lg)",
+    background: "var(--ds-color-blue-50)",
+  },
+
+  editorLabel: {
+    display: "block",
+    marginBottom: "var(--ds-space-2)",
+    color: "var(--ds-color-text)",
+    fontSize: "var(--ds-font-size-xs)",
+    fontWeight: "var(--ds-font-weight-semibold)",
   },
 
   commentTextarea: {
-    flex: 1,
-    minHeight: '60px',
-    borderRadius: '0.375rem',
-    border: '1px solid #D1D5DB',
-    padding: '0.5rem 0.75rem',
-    fontSize: '0.875rem',
-    outline: 'none',
-    resize: 'none' as const,
+    width: "100%",
+    minHeight: 92,
+    boxSizing: "border-box" as const,
+    padding: "var(--ds-space-3)",
+    border: "1px solid var(--ds-color-border-strong)",
+    borderRadius: "var(--ds-radius-lg)",
+    color: "var(--ds-color-text)",
+    background: "var(--ds-color-surface)",
+    boxShadow: "var(--ds-shadow-sm)",
+    font: "inherit",
+    fontSize: "var(--ds-font-size-sm)",
+    lineHeight: "var(--ds-line-height-normal)",
+    outline: "none",
+    resize: "vertical" as const,
   },
 
-  commentTextareaFocus: {
-    boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)',
+  editorFooter: {
+    marginTop: "var(--ds-space-2)",
+    display: "flex",
+    flexWrap: "wrap" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "var(--ds-space-2)",
   },
 
-  commentButtons: {
-    display: 'flex' as const,
-    flexDirection: 'column' as const,
-    gap: '0.25rem',
+  editorHint: {
+    color: "var(--ds-color-text-tertiary)",
+    fontSize: "0.6875rem",
   },
 
-  saveButton: {
-    padding: '0.5rem',
-    backgroundColor: '#059669',
-    color: 'white',
-    borderRadius: '0.375rem',
-    border: 'none',
-    cursor: 'pointer',
-  },
-
-  saveButtonHover: {
-    backgroundColor: '#047857',
-  },
-
-  cancelButton: {
-    padding: '0.5rem',
-    backgroundColor: '#4B5563',
-    color: 'white',
-    borderRadius: '0.375rem',
-    border: 'none',
-    cursor: 'pointer',
-  },
-
-  cancelButtonHover: {
-    backgroundColor: '#374151',
+  editorActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--ds-space-1)",
   },
 
   annotationActions: {
-    marginTop: '0.75rem',
-    display: 'flex' as const,
-    gap: '0.5rem',
+    marginTop: "var(--ds-space-4)",
+    paddingTop: "var(--ds-space-3)",
+    display: "flex",
+    flexWrap: "wrap" as const,
+    justifyContent: "flex-end",
+    gap: "var(--ds-space-2)",
+    borderTop: "1px solid var(--ds-color-border)",
   },
-
-  editCommentButtonCard: {
-    display: 'inline-flex' as const,
-    alignItems: 'center' as const,
-    gap: '0.25rem',
-    padding: '0.25rem 0.75rem',
-    fontSize: '0.75rem',
-    backgroundColor: '#DBEAFE',
-    color: '#1D4ED8',
-    borderRadius: '0.375rem',
-    border: 'none',
-    cursor: 'pointer',
-  },
-
-  editCommentButtonCardHover: {
-    backgroundColor: '#BFDBFE',
-  },
-
-  deleteAnnotationButtonCard: {
-    display: 'inline-flex' as const,
-    alignItems: 'center' as const,
-    gap: '0.25rem',
-    padding: '0.25rem 0.75rem',
-    fontSize: '0.75rem',
-    backgroundColor: '#FEE2E2',
-    color: '#B91C1C',
-    borderRadius: '0.375rem',
-    border: 'none',
-    cursor: 'pointer',
-  },
-
-  deleteAnnotationButtonCardHover: {
-    backgroundColor: '#FECACA',
-  }
 };
 
 export default annotationListStyles;

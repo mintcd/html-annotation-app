@@ -3,7 +3,6 @@ import { cache } from 'react';
 import * as cheerio from 'cheerio';
 import * as css from 'css';
 import { originToSlug } from './url';
-import { getOrCreateWebsite } from './api.client';
 
 export type ClonedPage = {
   title: string;
@@ -114,18 +113,10 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   const clonedBase = (baseTagHref ? new URL(baseTagHref, pageUrl) : new URL('.', pageUrl)).href;
 
   // ── Origin registration ───────────────────────────────────────────────────
-  // Register only the main page origin in the websites table so it can be
-  // annotated. Resource-only origins (CDNs, fonts, analytics, etc.) receive
-  // deterministic slugs via originToSlug() without a DB entry, preventing
-  // unannotated third-party hosts from polluting the websites table.
+  // Website registration happens in the browser through the generated db.
+  // The clone pipeline only needs deterministic slugs for rewritten URLs.
   const slugMap = new Map<string, string>();
-
-  try {
-    const website = await getOrCreateWebsite(pageUrl.origin);
-    slugMap.set(pageUrl.origin, website.id);
-  } catch {
-    slugMap.set(pageUrl.origin, originToSlug(pageUrl.origin));
-  }
+  slugMap.set(pageUrl.origin, originToSlug(pageUrl.origin));
 
   $('[src],[href]').each((_, el) => {
     const raw = ($(el).attr('src') || $(el).attr('href') || '').trim();

@@ -1,5 +1,3 @@
-import { buildKMPTable } from "./string";
-
 export async function awaitDomSettled(iframe: HTMLIFrameElement) {
   if (!iframe) return;
   const doc = iframe.contentDocument;
@@ -19,7 +17,7 @@ export async function awaitDomSettled(iframe: HTMLIFrameElement) {
   }
 
   // Wait for document.fonts if available
-  const fonts = (doc as any).fonts;
+  const fonts = doc.fonts;
   if (fonts && fonts.ready) await fonts.ready;
 
   // Wait for DOM to be idle (no mutations) for a short window
@@ -57,7 +55,7 @@ export async function awaitDomSettled(iframe: HTMLIFrameElement) {
 export function trackScriptExecution(iframe: HTMLIFrameElement) {
   try {
     const doc = iframe.contentDocument as Document;
-    const iWin = iframe.contentWindow ?? (doc as any)?.defaultView;
+    const iWin = iframe.contentWindow ?? doc.defaultView;
     if (doc && iWin) {
       const initialScripts = Array.from(doc.getElementsByTagName('script')) as HTMLScriptElement[];
       let totalScripts = initialScripts.length;
@@ -543,144 +541,457 @@ export function cleanedHtml(html: string): { html: string; mathSource?: string }
 }
 
 
-const positionsCache = new WeakMap<HTMLElement, TextPosition[]>();
-function getTextPositions(root: HTMLElement): TextPosition[] {
-  const ownerDoc = root.ownerDocument;
+const TEXT_ANCHOR_CONTEXT_LENGTH = 48;
+const INVISIBLE_TEXT_RE = /[\u00ad\u200b-\u200d\u2060\ufeff]/gu;
+const EXCLUDED_TEXT_SELECTOR = [
+  'script',
+  'style',
+  'noscript',
+  'template',
+  '[hidden]',
+  '.MathJax_Preview',
+  '.MJX_Assistive_MathML',
+  'mjx-assistive-mml',
+  '.katex-mathml',
+].join(',');
+const RENDERED_MATH_SELECTOR = '[data-mathml], .MathJax, .katex';
 
-  let positions = positionsCache.get(root);
-  if (!positions) {
-    const walker = ownerDoc.createTreeWalker(
-      root,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const t = (node as Text).nodeValue;
-          if (!t || t.length === 0) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      }
-    );
+type IndexedCharacter = {
+  char: string;
+  startNode: Text;
+  startOffset: number;
+  endNode: Text;
+  endOffset: number;
+};
 
-    const textNodes: Text[] = [];
-    for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
-      textNodes.push(n);
-    }
-    if (textNodes.length === 0)
-      throw new Error("No text nodes found in the document");
+export type TextIndex = {
+  root: HTMLElement;
+  text: string;
+  characters: IndexedCharacter[];
+  compactText: string;
+  compactCharacters: IndexedCharacter[];
+};
 
-    // Build positions of non-whitespace characters
-    positions = [];
-    for (const node of textNodes) {
-      const s = node.nodeValue as string;
-      for (let i = 0; i < s.length; i++) {
-        if (!/\s/.test(s[i])) {
-          positions.push({ node, offset: i, char: s[i] });
-        }
-      }
-    }
-    positionsCache.set(root, positions);
-  }
-  return positions;
+export function normalizeAnchorText(value: string): string {
+  return value
+    .normalize('NFC')
+    .replace(INVISIBLE_TEXT_RE, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
 }
 
-export function getRange(root: HTMLElement, searchText: string, rangePosition?: Annotation['position']): {
+function normalizeLegacyText(value: string): string {
+  return normalizeAnchorText(value).replace(/\s/gu, '');
+}
+
+function getGraphemeSegments(value: string): Array<{ segment: string; index: number }> {
+  if (typeof Intl.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(value), ({ segment, index }) => ({ segment, index }));
+  }
+
+  const segments: Array<{ segment: string; index: number }> = [];
+  let index = 0;
+  for (const segment of value) {
+    segments.push({ segment, index });
+    index += segment.length;
+  }
+  return segments;
+}
+
+function isIndexableTextNode(node: Text, root: HTMLElement, visibility: WeakMap<Element, boolean>): boolean {
+  if (!node.nodeValue) return false;
+
+  // MathJax and KaTeX mark their visual output aria-hidden because a second,
+  // assistive representation is provided to screen readers. Index the visual
+  // tree once and continue to exclude the assistive tree above. Otherwise a
+  // formula either disappears from the anchor or is counted multiple times.
+  const renderedMath = node.parentElement?.closest(RENDERED_MATH_SELECTOR);
+  const isRenderedMath = Boolean(renderedMath && root.contains(renderedMath));
+
+  for (let element = node.parentElement; element; element = element.parentElement) {
+    let visible = visibility.get(element);
+    if (visible === undefined) {
+      visible = !element.matches(EXCLUDED_TEXT_SELECTOR);
+      const isMathRenderingElement = isRenderedMath && renderedMath?.contains(element);
+      if (visible && element.matches('[aria-hidden="true"]') && !isMathRenderingElement) {
+        visible = false;
+      }
+      if (visible) {
+        const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+        visible = style?.display !== 'none'
+          && style?.visibility !== 'hidden'
+          && style?.visibility !== 'collapse';
+      }
+      visibility.set(element, visible);
+    }
+    if (!visible) return false;
+    if (element === root) return true;
+  }
+
+  return false;
+}
+
+function buildTextIndex(
+  root: HTMLElement,
+  accepts: (node: Text) => boolean,
+  emptyMessage: string,
+): TextIndex {
+  const characters: IndexedCharacter[] = [];
+  const compactCharacters: IndexedCharacter[] = [];
+  const walker = root.ownerDocument.createTreeWalker(
+    root,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        return accepts(node as Text)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      },
+    },
+  );
+
+  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+    const value = node.nodeValue ?? '';
+    for (const { segment, index } of getGraphemeSegments(value)) {
+      const normalized = segment.normalize('NFC').replace(INVISIBLE_TEXT_RE, '');
+      const endOffset = index + segment.length;
+
+      for (let i = 0; i < normalized.length; i++) {
+        const char = normalized[i];
+        const indexed: IndexedCharacter = {
+          char,
+          startNode: node,
+          startOffset: index,
+          endNode: node,
+          endOffset,
+        };
+
+        if (/\s/u.test(char)) {
+          const previous = characters[characters.length - 1];
+          if (!previous) continue;
+          if (previous.char === ' ') {
+            previous.endNode = node;
+            previous.endOffset = endOffset;
+          } else {
+            characters.push({ ...indexed, char: ' ' });
+          }
+        } else {
+          characters.push(indexed);
+          compactCharacters.push(indexed);
+        }
+      }
+    }
+  }
+
+  if (characters[characters.length - 1]?.char === ' ') characters.pop();
+  if (characters.length === 0) throw new Error(emptyMessage);
+
+  return {
+    root,
+    text: characters.map(({ char }) => char).join(''),
+    characters,
+    compactText: compactCharacters.map(({ char }) => char).join(''),
+    compactCharacters,
+  };
+}
+
+export function createTextIndex(root: HTMLElement): TextIndex {
+  const visibility = new WeakMap<Element, boolean>();
+  return buildTextIndex(
+    root,
+    (node) => isIndexableTextNode(node, root, visibility),
+    'No visible text found in the document',
+  );
+}
+
+function createLegacyTextIndex(root: HTMLElement): TextIndex {
+  return buildTextIndex(
+    root,
+    (node) => Boolean(node.nodeValue),
+    'No text found in the document',
+  );
+}
+
+function rangeFromCharacters(
+  ownerDocument: Document,
+  characters: IndexedCharacter[],
+  start: number,
+  end: number,
+): Range | null {
+  if (
+    !Number.isInteger(start)
+    || !Number.isInteger(end)
+    || start < 0
+    || end <= start
+    || end > characters.length
+  ) return null;
+
+  const first = characters[start];
+  const last = characters[end - 1];
+  const range = ownerDocument.createRange();
+  range.setStart(first.startNode, first.startOffset);
+  range.setEnd(last.endNode, last.endOffset);
+  return range;
+}
+
+function anchorAt(index: TextIndex, start: number, end: number): TextAnchor {
+  return {
+    version: 1,
+    start,
+    end,
+    exact: index.text.slice(start, end),
+    prefix: index.text.slice(Math.max(0, start - TEXT_ANCHOR_CONTEXT_LENGTH), start),
+    suffix: index.text.slice(end, end + TEXT_ANCHOR_CONTEXT_LENGTH),
+  };
+}
+
+function commonPrefixLength(left: string, right: string): number {
+  const length = Math.min(left.length, right.length);
+  let i = 0;
+  while (i < length && left[i] === right[i]) i++;
+  return i;
+}
+
+function commonSuffixLength(left: string, right: string): number {
+  const length = Math.min(left.length, right.length);
+  let i = 0;
+  while (i < length && left[left.length - 1 - i] === right[right.length - 1 - i]) i++;
+  return i;
+}
+
+function findOccurrences(text: string, exact: string): number[] {
+  const starts: number[] = [];
+  for (let start = text.indexOf(exact); start !== -1; start = text.indexOf(exact, start + 1)) {
+    starts.push(start);
+  }
+  return starts;
+}
+
+export function findTextAnchorMatch(text: string, exact: string, anchor?: TextAnchor): number | null {
+  if (!exact) return null;
+
+  if (anchor && text.slice(anchor.start, anchor.start + exact.length) === exact) {
+    return anchor.start;
+  }
+
+  const starts = findOccurrences(text, exact);
+  if (starts.length === 0) return null;
+  if (starts.length === 1) return starts[0];
+  if (!anchor) return null;
+
+  const ranked = starts.map((start) => {
+    const prefix = text.slice(Math.max(0, start - anchor.prefix.length), start);
+    const suffix = text.slice(start + exact.length, start + exact.length + anchor.suffix.length);
+    return {
+      start,
+      context: commonSuffixLength(prefix, anchor.prefix) + commonPrefixLength(suffix, anchor.suffix),
+      distance: Math.abs(start - anchor.start),
+    };
+  }).sort((left, right) =>
+    right.context - left.context
+    || left.distance - right.distance
+    || left.start - right.start,
+  );
+
+  const best = ranked[0];
+  const second = ranked[1];
+  const requiredContext = Math.min(8, anchor.prefix.length + anchor.suffix.length);
+  if (requiredContext === 0 || best.context < requiredContext) return null;
+  if (second && best.context === second.context && best.distance === second.distance) return null;
+  return best.start;
+}
+
+function anchorsEqual(left: TextAnchor, right: TextAnchor): boolean {
+  return left.start === right.start
+    && left.end === right.end
+    && left.exact === right.exact
+    && left.prefix === right.prefix
+    && left.suffix === right.suffix;
+}
+
+function isTextAnchor(position: AnnotationPosition): position is TextAnchor {
+  return 'version' in position && position.version === 1;
+}
+
+function isLegacyPosition(position: AnnotationPosition): position is LegacyAnnotationPosition {
+  return 'startPosition' in position;
+}
+
+function resolveLegacyPosition(
+  index: TextIndex,
+  searchText: string,
+  position: LegacyAnnotationPosition,
+): Range | null {
+  const { startPosition, endPosition } = position;
+  const exact = normalizeLegacyText(searchText);
+  if (
+    !Number.isInteger(startPosition)
+    || !Number.isInteger(endPosition)
+    || startPosition < 0
+    || endPosition < startPosition
+    || endPosition >= index.compactCharacters.length
+    || index.compactText.slice(startPosition, endPosition + 1) !== exact
+  ) return null;
+
+  return rangeFromCharacters(
+    index.root.ownerDocument,
+    index.compactCharacters,
+    startPosition,
+    endPosition + 1,
+  );
+}
+
+export function createTextAnchor(
+  root: HTMLElement,
+  range: Range,
+  index: TextIndex = createTextIndex(root),
+): TextAnchor | null {
+  const ownerDocument = root.ownerDocument;
+  const startBoundary = range.cloneRange();
+  const endBoundary = range.cloneRange();
+  const point = ownerDocument.createRange();
+  startBoundary.collapse(true);
+  endBoundary.collapse(false);
+
+  let start = -1;
+  let end = -1;
+
+  try {
+    for (let i = 0; i < index.characters.length; i++) {
+      const character = index.characters[i];
+      point.setStart(character.endNode, character.endOffset);
+      point.collapse(true);
+      if (point.compareBoundaryPoints(Range.START_TO_START, startBoundary) <= 0) continue;
+
+      point.setStart(character.startNode, character.startOffset);
+      point.collapse(true);
+      if (point.compareBoundaryPoints(Range.START_TO_START, endBoundary) >= 0) break;
+
+      if (start === -1) start = i;
+      end = i + 1;
+    }
+  } catch {
+    return null;
+  }
+
+  if (start === -1 || end <= start) return null;
+  return anchorAt(index, start, end);
+}
+
+export function getRange(
+  root: HTMLElement,
+  searchText: string,
+  rangePosition?: Annotation['position'],
+  index: TextIndex = createTextIndex(root),
+): {
   range: Range;
   usedPosition: boolean;
-  resolvedPosition?: { startPosition: number, endPosition: number, startOffset: number, endOffset: number };
+  resolvedPosition?: TextAnchor;
 } {
-  // First try the position-based resolver when a cached position is provided
-  if (rangePosition) {
-    try {
-      const range = getRangeByPosition(root, searchText, rangePosition);
+  const exact = normalizeAnchorText(searchText);
+  if (!exact) throw new Error('Search text must be non-empty');
+
+  if (rangePosition && isTextAnchor(rangePosition)) {
+    // The displayed annotation text may come from Range#toString(), which
+    // included MathJax's visual, assistive, and script representations in old
+    // annotations. The anchor exact is the canonical one-representation quote.
+    const anchorExact = normalizeAnchorText(rangePosition.exact);
+    const start = findTextAnchorMatch(index.text, anchorExact, rangePosition);
+    if (start !== null) {
+      const end = start + anchorExact.length;
+      const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
       if (range) {
-        return { range, usedPosition: true };
+        const resolvedPosition = anchorAt(index, start, end);
+        const unchanged = anchorsEqual(rangePosition, resolvedPosition);
+        return {
+          range,
+          usedPosition: unchanged,
+          resolvedPosition: unchanged ? undefined : resolvedPosition,
+        };
       }
-    } catch (e) {
-      // fall through to full-text fallback
     }
   }
 
-  // Fallback to full-text KMP-based resolver which also returns canonical
-  // position information so callers can persist it.
-  const res = getRangeByText(root, searchText);
-  return {
-    range: res.range,
-    usedPosition: false,
-    resolvedPosition: { startPosition: res.startPosition, endPosition: res.endPosition, startOffset: res.startOffset, endOffset: res.endOffset }
-  };
+  let legacyIndex: TextIndex | undefined;
+  if (rangePosition && isLegacyPosition(rangePosition)) {
+    // Legacy offsets were calculated over every text node, including hidden
+    // MathJax fallbacks and script[type="math/tex"]. Recreate that index only
+    // while migrating an old position.
+    legacyIndex = createLegacyTextIndex(root);
+    const range = resolveLegacyPosition(legacyIndex, searchText, rangePosition);
+    if (range) {
+      const resolvedPosition = createTextAnchor(root, range, index) ?? undefined;
+      return { range, usedPosition: false, resolvedPosition };
+    }
+  }
+
+  const start = findTextAnchorMatch(index.text, exact);
+  if (start !== null) {
+    const end = start + exact.length;
+    const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
+    if (!range) throw new Error('Unable to reconstruct annotation range');
+    return { range, usedPosition: false, resolvedPosition: anchorAt(index, start, end) };
+  }
+
+  // Compatibility path for annotations saved from a DOM where a MathJax
+  // formula appeared three times in Range#toString(). Once matched, return a
+  // canonical anchor so subsequent reloads stay on the fast path.
+  legacyIndex ??= createLegacyTextIndex(root);
+  const legacyStart = findTextAnchorMatch(legacyIndex.text, exact);
+  if (legacyStart !== null) {
+    const legacyEnd = legacyStart + exact.length;
+    const range = rangeFromCharacters(
+      root.ownerDocument,
+      legacyIndex.characters,
+      legacyStart,
+      legacyEnd,
+    );
+    if (!range) throw new Error('Unable to reconstruct legacy annotation range');
+    const resolvedPosition = createTextAnchor(root, range, index) ?? undefined;
+    return { range, usedPosition: false, resolvedPosition };
+  }
+
+  const occurrences = Math.max(
+    findOccurrences(index.text, exact).length,
+    findOccurrences(legacyIndex.text, exact).length,
+  );
+  if (occurrences > 1) throw new Error(`Annotation text is ambiguous (${occurrences} matches)`);
+  throw new Error(`${searchText} not found in document`);
 }
-
-
 
 export function getRangeByText(root: HTMLElement, searchText: string): {
-  range: Range,
-  startPosition: number,
-  endPosition: number,
-  startOffset: number,
-  endOffset: number
+  range: Range;
+  startPosition: number;
+  endPosition: number;
+  startOffset: number;
+  endOffset: number;
 } {
-  if (!searchText || !searchText.trim())
-    throw new Error("Search text must be non-empty");
+  const index = createTextIndex(root);
+  const exact = normalizeAnchorText(searchText);
+  const start = findTextAnchorMatch(index.text, exact);
+  if (start === null) throw new Error('Text not found or is ambiguous');
 
-  // Normalize searchText by removing all whitespace
-  const pat = searchText.replace(/\s/g, '');
-  const m = pat.length;
-  const lps = buildKMPTable(pat);
-
-  const positions = getTextPositions(root);
-  const ownerDoc = root.ownerDocument;
-
-  // Run KMP on the flattened text
-  let j = 0;
-  for (let idx = 0; idx < positions.length; idx++) {
-    const ch = positions[idx].char;
-    while (j > 0 && ch !== pat[j]) j = lps[j - 1];
-    if (ch === pat[j]) {
-      j++;
-      if (j === m) {
-        const startPos = positions[idx - m + 1];
-        const endPos = positions[idx];
-        const range = ownerDoc.createRange();
-        range.setStart(startPos.node, startPos.offset);
-        range.setEnd(endPos.node, endPos.offset + 1);
-
-        return { range, startPosition: idx - m + 1, endPosition: idx, startOffset: startPos.offset, endOffset: endPos.offset + 1 };
-      }
-    }
-  }
-
-  console.warn(`Text "${searchText.substring(0, 50)}..." not found in document`);
-  throw new Error("Text not found in document");
+  const end = start + exact.length;
+  const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
+  if (!range) throw new Error('Unable to reconstruct annotation range');
+  const first = index.characters[start];
+  const last = index.characters[end - 1];
+  return {
+    range,
+    startPosition: start,
+    endPosition: end - 1,
+    startOffset: first.startOffset,
+    endOffset: last.endOffset,
+  };
 }
 
-export function getRangeByPosition(root: HTMLElement, searchText: string, rangePosition: { startPosition: number, endPosition: number, startOffset: number, endOffset: number }): Range | null {
-  // console.log('Attempting position-based range retrieval with', rangePosition);
-  if (!searchText || !searchText.trim()) throw new Error("Search text must be non-empty");
-
-  const pat = searchText.replace(/\s/g, '');
-  const positions = getTextPositions(root);
-  const ownerDoc = root.ownerDocument;
-
-  const { startPosition, endPosition, startOffset, endOffset } = rangePosition;
-
-  // Reconstruct the flattened (non-whitespace) string from the positions slice
-  let s = '';
-  for (let i = startPosition; i <= endPosition; i++) s += positions[i].char;
-
-  if (s !== pat) {
-    console.warn(`Position-based retrieval failed: expected "${pat}", got "${s}"`);
-    return null;
-  };
-
-  console.log('Position range matches search text, building Range');
-
-  const startNode = positions[startPosition].node;
-  const endNode = positions[endPosition].node;
-  const range = ownerDoc.createRange();
-  range.setStart(startNode, startOffset);
-  range.setEnd(endNode, endOffset);
-
-  return range;
+export function getRangeByPosition(
+  root: HTMLElement,
+  searchText: string,
+  rangePosition: LegacyAnnotationPosition,
+): Range | null {
+  return resolveLegacyPosition(createLegacyTextIndex(root), searchText, rangePosition);
 }
 
 export function highlightRange(range: Range, color: string = "#ffff00", id?: string): string {

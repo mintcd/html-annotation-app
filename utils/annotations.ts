@@ -1,35 +1,35 @@
-import { listPages, getAnnotationsForPage, updateAnnotation } from './api.client';
-import { getRange, highlightRange } from './dom';
+import { eq } from '@mintcd/sync-engine';
+import { db } from './engine';
+import { createTextIndex, getRange, highlightRange } from './dom';
 
 export async function highlightAnnotations(annotations: Annotation[], container: HTMLElement) {
+  if (annotations.length === 0) return;
+
+  // Use one immutable DOM snapshot for the whole batch. Highlighting mutates
+  // text nodes, so a cross-batch cache would retain stale node references.
+  const textIndex = createTextIndex(container);
+
   // Compute ranges for all annotations first (no DOM mutations yet).
   const prepared: Array<{
     ann: Annotation;
     range: Range;
     usedPosition: boolean;
-    resolvedPosition?: { startPosition: number; endPosition: number; startOffset: number; endOffset: number };
+    resolvedPosition?: TextAnchor;
   }> = [];
 
   for (const ann of annotations) {
     try {
-      const result = getRange(container, ann.text, ann.position);
+      const result = getRange(container, ann.text, ann.position, textIndex);
       prepared.push({ ann, range: result.range, usedPosition: result.usedPosition, resolvedPosition: result.resolvedPosition });
     } catch (e) {
       console.warn('Failed to match annotation:', ann.id, e);
     }
   }
 
-  // Persist any resolved positions before we mutate the DOM (so offsets stay valid).
-  await Promise.all(prepared.map(async (p) => {
-    if (!p.usedPosition && p.resolvedPosition) {
-      try {
-        console.log(`Persisting resolved position for annotation ${p.ann.id}`, p.resolvedPosition);
-        await updateAnnotation(p.ann.id, { position: p.resolvedPosition });
-      } catch (e) {
-        console.error('Failed to persist annotation position:', e);
-      }
-    }
-  }));
+  const anchorRepairs = prepared.filter(
+    (item): item is typeof item & { resolvedPosition: TextAnchor } =>
+      !item.usedPosition && item.resolvedPosition !== undefined,
+  );
 
   // Highlight from the end of the document backwards so earlier mutations
   // don't shift the positions of later ranges.
@@ -41,6 +41,23 @@ export async function highlightAnnotations(annotations: Annotation[], container:
     } catch (e) {
       console.warn('Failed to highlight annotation:', p.ann.id, e);
     }
+  }
+
+  // Anchor maintenance should not delay painting. Preserve updated_at so a
+  // background relocation is not presented as a user edit. The repository
+  // currently has no multi-row transaction API, so these writes are issued
+  // together and handled independently.
+  if (anchorRepairs.length > 0) {
+    void Promise.all(anchorRepairs.map(async ({ ann, resolvedPosition }) => {
+      try {
+        await db.update({ position: resolvedPosition, updated_at: ann.updated_at })
+          .from('annotations')
+          .where(eq('id', ann.id))
+          .execute();
+      } catch (e) {
+        console.error(`Failed to persist annotation anchor ${ann.id}:`, e);
+      }
+    }));
   }
 }
 
@@ -82,52 +99,4 @@ export const sortOptions = [
   { value: 'modified-desc' as SortOption, label: 'Recently Modified' },
   { value: 'modified-asc' as SortOption, label: 'Least Recently Modified' },
 ];
-
-export type AnnotationPage = {
-  url: string;
-  filename: string;
-  timestamp: string;
-  title?: string;
-  count: number;
-  annotations: Annotation[];
-  blobUrl: string;
-  uploadedAt: string;
-}
-
-export async function loadAnnotations(): Promise<AnnotationPage[]> {
-  try {
-    const pages = await listPages();
-    const annotationPages = await Promise.all(
-      pages.map(async (page: Page) => {
-        const annotations = await getAnnotationsForPage(page.url);
-        return {
-          url: page.url,
-          filename: `${page.id}.json`,
-          timestamp: page.created_at,
-          title: page.title,
-          count: page.number_of_annotations,
-          annotations: annotations,
-          blobUrl: '',
-          uploadedAt: page.updated_at,
-        } satisfies AnnotationPage;
-      })
-    );
-    console.log(`Fetched ${annotationPages.length} pages`);
-    return annotationPages;
-  } catch (error) {
-    console.error('[Dashboard] Error fetching annotations:', error);
-    return [];
-  }
-}
-
-export async function loadAnnotationsForPage(pageUrl: string): Promise<Annotation[]> {
-  try {
-    const annotations = await getAnnotationsForPage(pageUrl);
-    console.log(`Loaded ${annotations.length} annotations for ${pageUrl}`);
-    return annotations;
-  } catch (error) {
-    console.error('Error loading annotations:', error);
-    return [];
-  }
-}
 

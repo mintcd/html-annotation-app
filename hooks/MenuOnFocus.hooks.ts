@@ -1,11 +1,28 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAnnotationContext } from "../context/Annotator.context";
+import { useAnnotatorOverlayOptional } from "../context/AnnotatorOverlay.context";
 
 export function useFocusedId() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const focusedIdRef = useRef<string | null>(null);
   const { iframeRef, iframeReady } = useAnnotationContext();
+  const overlay = useAnnotatorOverlayOptional();
+
+  const updateFocusedId = useCallback((id: string | null) => {
+    focusedIdRef.current = id;
+    setFocusedId(id);
+    if (id) overlay?.showHighlight(id);
+    else overlay?.clearContextual();
+  }, [overlay]);
+
+  const overlayFocusedId = overlay && 'annotationId' in overlay.contextual
+    ? overlay.contextual.annotationId
+    : null;
+  const visibleFocusedId = overlay
+    ? overlayFocusedId === focusedId ? focusedId : null
+    : focusedId;
 
   useEffect(() => {
     if (!iframeReady) return;
@@ -25,7 +42,10 @@ export function useFocusedId() {
         const span = target as HTMLSpanElement;
         const id = span.dataset.highlightId;
         if (id) {
-          setFocusedId(prevId => prevId === id ? null : id);
+          const currentId = overlay
+            ? overlayFocusedId === focusedIdRef.current ? focusedIdRef.current : null
+            : focusedIdRef.current;
+          updateFocusedId(currentId === id ? null : id);
           return;
         }
       }
@@ -36,18 +56,21 @@ export function useFocusedId() {
         const span = highlightedSpan as HTMLSpanElement;
         const id = span.dataset.highlightId;
         if (id) {
-          setFocusedId(prevId => prevId === id ? null : id);
+          const currentId = overlay
+            ? overlayFocusedId === focusedIdRef.current ? focusedIdRef.current : null
+            : focusedIdRef.current;
+          updateFocusedId(currentId === id ? null : id);
           return;
         }
       }
 
       // Click/touch outside any highlight - close menu
-      setFocusedId(null);
+      updateFocusedId(null);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setFocusedId(null);
+        updateFocusedId(null);
       }
     };
 
@@ -58,7 +81,7 @@ export function useFocusedId() {
       iDoc.removeEventListener('pointerup', handleInteraction);
       iDoc.removeEventListener('keydown', handleKeyDown as EventListener);
     };
-  }, [iframeReady, iframeRef]);
+  }, [iframeReady, iframeRef, overlay, overlayFocusedId, updateFocusedId]);
 
-  return { focusedId, setFocusedId };
+  return { focusedId: visibleFocusedId, setFocusedId: updateFocusedId };
 }

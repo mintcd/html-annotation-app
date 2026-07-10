@@ -1,37 +1,64 @@
 const commentEditorStyles = {
   container: {
-    marginTop: '0.75rem',
-    padding: '0.75rem 0.75rem 0.75rem',
-    borderTop: '1px solid #f3f4f6'
+    margin: "calc(var(--ds-space-1) * -1) var(--ds-space-1) var(--ds-space-2)",
   },
 
-  relativeContainer: {
-    position: 'relative' as const
+  editorCard: {
+    padding: "var(--ds-space-3)",
+    border: "1px solid var(--ds-color-blue-200)",
+    borderRadius: "var(--ds-radius-lg)",
+    background: "linear-gradient(145deg, var(--ds-color-blue-50), var(--ds-color-surface))",
+    boxShadow: "var(--ds-shadow-sm)",
+  },
+
+  header: {
+    marginBottom: "var(--ds-space-2)",
+    display: "flex",
+    flexWrap: "wrap" as const,
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "var(--ds-space-1) var(--ds-space-2)",
+  },
+
+  label: {
+    color: "var(--ds-color-text)",
+    fontSize: "var(--ds-font-size-xs)",
+    fontWeight: "var(--ds-font-weight-semibold)",
+  },
+
+  helperText: {
+    color: "var(--ds-color-text-tertiary)",
+    fontSize: "0.625rem",
   },
 
   textarea: (isFocused: boolean): React.CSSProperties => ({
-    width: '100%',
-    borderRadius: '0.75rem',
-    border: isFocused ? '2px solid #60a5fa' : '2px solid #bfdbfe',
-    background: 'linear-gradient(to bottom right, #eff6ff, white)',
-    padding: '0.75rem 1rem',
-    fontSize: '0.875rem',
-    outline: 'none',
-    resize: 'none' as const,
-    boxShadow: isFocused ? '0 0 0 2px #60a5fa, 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)' : '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
-    transition: 'all 0.3s'
+    width: "100%",
+    minHeight: 84,
+    boxSizing: "border-box",
+    padding: "var(--ds-space-3)",
+    border: `1px solid ${isFocused ? "var(--ds-color-focus)" : "var(--ds-color-border)"}`,
+    borderRadius: "var(--ds-radius-lg)",
+    color: "var(--ds-color-text)",
+    background: "var(--ds-color-surface)",
+    boxShadow: isFocused ? "var(--ds-focus-ring)" : "inset 0 1px 2px rgba(21, 32, 51, 0.04)",
+    fontFamily: "var(--ds-font-family-sans)",
+    fontSize: "var(--ds-font-size-xs)",
+    lineHeight: "var(--ds-line-height-normal)",
+    outline: "none",
+    resize: "vertical",
+    transition: [
+      "border-color var(--ds-motion-fast) var(--ds-ease-standard)",
+      "box-shadow var(--ds-motion-fast) var(--ds-ease-standard)",
+    ].join(", "),
   }),
 
-  helperText: {
-    position: 'absolute' as const,
-    bottom: '0.5rem',
-    right: '0.5rem',
-    fontSize: '0.75rem',
-    color: '#9ca3af',
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    padding: '0.25rem 0.5rem',
-    borderRadius: '0.375rem'
-  }
+  actions: {
+    marginTop: "var(--ds-space-2)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "var(--ds-space-1)",
+  },
 };
 
 export default commentEditorStyles;

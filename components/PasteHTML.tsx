@@ -1,7 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { PasteHtml } from '../app/icons';
+import { Button } from '../design-system/button';
 import promptBoxStyles from '../styles/PromptBox.styles';
+import pasteHtmlStyles from '../styles/PasteHTML.styles';
 
 type Props = {
   error?: string;
@@ -43,62 +46,75 @@ export default function PasteHTML({ error, site, path, onSuccess, onClose }: Pro
 
   const instructions = [
     'Open the page in your browser.',
-    'Press Ctrl+A (Cmd+A on Mac) to select all, then Ctrl+U (Cmd+U) to view source.',
-    'Or right-click → "View Page Source", then Ctrl+A → Ctrl+C.',
+    'Open “View Page Source” from the browser menu or page context menu.',
+    'Select all of the source and copy it.',
     'Paste the full HTML below.',
   ];
 
   return (
     <div style={promptBoxStyles.backdrop}>
-      <div style={promptBoxStyles.overlay} onClick={onClose} />
-      <div style={{ ...promptBoxStyles.modal, maxWidth: 'min(680px, calc(100dvw - 1rem))' }}>
-        <div style={promptBoxStyles.content}>
-          <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-            Page could not be fetched automatically
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Close HTML recovery dialog"
+        style={promptBoxStyles.overlay}
+        onClick={onClose}
+        disabled={saving}
+      />
+      <div role="dialog" aria-modal="true" aria-labelledby="paste-html-title" style={pasteHtmlStyles.modal}>
+        <form
+          style={pasteHtmlStyles.content}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSubmit();
+          }}
+          onKeyDown={(event) => {
+            if (saving && event.key === 'Escape') event.preventDefault();
+          }}
+        >
+          <div style={pasteHtmlStyles.header}>
+            <span style={pasteHtmlStyles.icon} aria-hidden="true"><PasteHtml size={20} /></span>
+            <div>
+              <h2 id="paste-html-title" style={pasteHtmlStyles.title}>Load page from HTML</h2>
+              <p style={pasteHtmlStyles.subtitle}>Use the page source when automatic fetching is blocked.</p>
+            </div>
           </div>
-          <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem' }}>
-            <code style={{ background: '#f3f4f6', padding: '2px 5px', borderRadius: 3 }}>{error}</code>
-          </div>
-          <ol style={{ fontSize: '0.8rem', color: '#374151', paddingLeft: '1.1rem', margin: '0 0 0.75rem' }}>
-            {instructions.map((s, i) => <li key={i} style={{ marginBottom: 2 }}>{s}</li>)}
+
+          {error && <div style={pasteHtmlStyles.fetchError}>{error}</div>}
+
+          <ol style={pasteHtmlStyles.instructions}>
+            {instructions.map((instruction, index) => (
+              <li key={instruction} style={pasteHtmlStyles.instruction}>
+                <span style={pasteHtmlStyles.stepNumber}>{index + 1}</span>
+                <span>{instruction}</span>
+              </li>
+            ))}
           </ol>
-          <textarea
-            value={html}
-            onChange={e => setHtml(e.target.value)}
-            placeholder="Paste full page HTML here…"
-            rows={10}
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              fontFamily: 'monospace',
-              fontSize: '0.75rem',
-              padding: '0.5rem',
-              border: '1px solid #d1d5db',
-              borderRadius: '0.375rem',
-              resize: 'vertical',
-            }}
-          />
-          {saveError && (
-            <div style={{ color: '#dc2626', fontSize: '0.8rem', marginTop: '0.25rem' }}>{saveError}</div>
-          )}
-          <div style={promptBoxStyles.actions}>
-            <button
-              type="button"
-              style={promptBoxStyles.buttonVariant('primary')}
-              onClick={handleSubmit}
-              disabled={saving || !html.trim()}
-            >
-              {saving ? 'Saving…' : 'Save & Load'}
-            </button>
-            <button
-              type="button"
-              style={promptBoxStyles.buttonVariant('neutral')}
-              onClick={onClose}
-            >
-              Cancel
-            </button>
+
+          <label style={pasteHtmlStyles.field}>
+            <span style={pasteHtmlStyles.fieldHeader}>
+              <span>Page source</span>
+              <span style={pasteHtmlStyles.characterCount}>{html.length.toLocaleString()} characters</span>
+            </span>
+            <textarea
+              autoFocus
+              value={html}
+              onChange={(event) => setHtml(event.target.value)}
+              placeholder="<!doctype html>…"
+              rows={11}
+              style={pasteHtmlStyles.textarea}
+            />
+          </label>
+
+          {saveError && <div role="alert" style={pasteHtmlStyles.saveError}>{saveError}</div>}
+
+          <div style={pasteHtmlStyles.actions}>
+            <Button type="button" variant="ghost" size="small" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button type="submit" size="small" loading={saving} disabled={!html.trim()}>
+              Save and load page
+            </Button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );
