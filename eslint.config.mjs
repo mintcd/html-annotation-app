@@ -13,6 +13,7 @@ export default defineConfig([
     'out/**',
     'app/api/**',
     'public/sw.js',
+    'public/sw.sync.js',
     'utils/engine.ts',
     '*.tsbuildinfo',
     'next-env.d.ts',

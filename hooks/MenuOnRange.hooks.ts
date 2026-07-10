@@ -7,6 +7,11 @@ import { useAnnotatorOverlayOptional } from "../context/AnnotatorOverlay.context
 // Small debounce hook used to create a stable debounced callback
 function useDebouncedCallback<T extends (...args: unknown[]) => void>(fn: T, delay = 100) {
   const timer = useRef<number | null>(null);
+  const fnRef = useRef(fn);
+
+  useEffect(() => {
+    fnRef.current = fn;
+  }, [fn]);
 
   useEffect(() => {
     return () => {
@@ -16,8 +21,8 @@ function useDebouncedCallback<T extends (...args: unknown[]) => void>(fn: T, del
 
   return useCallback((...args: Parameters<T>) => {
     if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => fn(...args), delay) as unknown as number;
-  }, [fn, delay]);
+    timer.current = window.setTimeout(() => fnRef.current(...args), delay) as unknown as number;
+  }, [delay]);
 }
 
 export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
@@ -37,6 +42,12 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
     : range;
 
   const finalizeFromSelection = useCallback(() => {
+    const iframeDoc = iframeRef.current?.contentDocument;
+    if (
+      overlay?.contextual.type === 'resize'
+      || iframeDoc?.documentElement.dataset.annotationResizeId
+    ) return;
+
     const iframeWin = iframeRef.current?.contentWindow;
     const sel = iframeWin?.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
@@ -45,7 +56,6 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
     }
 
     const r = sel.getRangeAt(0).cloneRange();
-    const iframeDoc = iframeRef.current?.contentDocument;
     if (!iframeDoc) {
       console.log("No iframe document found for selection");
       return
@@ -61,15 +71,20 @@ export function useSelection(menuRef: React.RefObject<HTMLElement | null>) {
     }
 
     updateRange(r);
-  }, [iframeRef, updateRange]);
+  }, [iframeRef, overlay?.contextual.type, updateRange]);
 
   // Debounced fallback used for selection handle drags on mobile
   const debouncedFinalize = useDebouncedCallback(finalizeFromSelection as (...args: unknown[]) => void, 100);
 
   // While selection is changing, hide the menu immediately
   const handleSelectionChanging = useCallback(() => {
+    const iframeDoc = iframeRef.current?.contentDocument;
+    if (
+      overlay?.contextual.type === 'resize'
+      || iframeDoc?.documentElement.dataset.annotationResizeId
+    ) return;
     updateRange(null);
-  }, [updateRange]);
+  }, [iframeRef, overlay?.contextual.type, updateRange]);
 
   const handlePointerUp = useCallback(() => {
     finalizeFromSelection();

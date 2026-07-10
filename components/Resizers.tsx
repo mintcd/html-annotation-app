@@ -1,254 +1,843 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from 'react';
-import sticksStyles from '../styles/Sticks.styles';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAnnotationContext } from '../context/Annotator.context';
-import { highlightStartPosition, highlightEndPosition } from '../utils/highlight';
+import { useAnnotatorOverlayOptional } from '../context/AnnotatorOverlay.context';
+import { Save, Times } from '../app/icons';
+import { Button } from '../design-system/button';
+import { useCoarsePointer } from '../hooks';
+import sticksStyles from '../styles/Sticks.styles';
+import {
+  cleanedHtml,
+  createTextAnchor,
+  createTextIndex,
+  getRange,
+  highlightRange,
+  rangeToHtml,
+  removeHighlights,
+} from '../utils/dom';
+
+type Boundary = 'start' | 'end';
 
 type Props = {
   annotationId: string;
+  onResize?: () => void;
+};
+
+type Endpoint = {
+  x: number;
+  top: number;
+  height: number;
+};
+
+type EndpointGeometry = {
+  start: Endpoint;
+  end: Endpoint;
+};
+
+type DragState = {
+  boundary: Boundary;
+  pointerId: number;
+  baseRange: Range;
+};
+
+type UserSelectSnapshot = Array<{
+  element: HTMLElement;
+  value: string;
+}>;
+
+const STICK_WIDTH = 1.5;
+
+function selectorForHighlight(id: string, doc: Document): string {
+  const escaped = doc.defaultView?.CSS?.escape
+    ? doc.defaultView.CSS.escape(id)
+    : id.replace(/["\\]/g, '\\$&');
+  return `span.highlighted-text[data-highlight-id="${escaped}"]`;
 }
 
-const STICK_WIDTH = 1.5
+function getHighlightRange(doc: Document, annotationId: string): Range | null {
+  const spans = doc.querySelectorAll<HTMLSpanElement>(
+    selectorForHighlight(annotationId, doc),
+  );
+  if (spans.length === 0) return null;
 
-export default function Sticks({ annotationId }: Props) {
-  const [dragging, setDragging] = useState<'start' | 'end' | null>(null);
-  // during drag we store the visual position of the moving stick as a DOMRect
-  const [draggingRect, setDraggingRect] = useState<DOMRect | null>(null);
-  const { contentRef } = useAnnotationContext();
+  const first = spans[0];
+  const last = spans[spans.length - 1];
+  const range = doc.createRange();
+  range.setStart(first, 0);
+  range.setEnd(last, last.childNodes.length);
+  return range.collapsed ? null : range;
+}
 
-  // Hide sticks while the user is scrolling or sliding (touchmove/wheel)
+function rangeInsideRoot(range: Range, root: HTMLElement): boolean {
+  return root.contains(range.startContainer) && root.contains(range.endContainer);
+}
+
+function getSelectedRange(iframe: HTMLIFrameElement, root: HTMLElement): Range | null {
+  const selection = iframe.contentWindow?.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+
+  const range = selection.getRangeAt(0);
+  if (!rangeInsideRoot(range, root)) return null;
+  return range.cloneRange();
+}
+
+function replaceFrameSelection(iframe: HTMLIFrameElement, range: Range | null): boolean {
+  const selection = iframe.contentWindow?.getSelection();
+  if (!selection) return false;
+
+  selection.removeAllRanges();
+  if (range) selection.addRange(range.cloneRange());
+  return !range || selection.rangeCount > 0;
+}
+
+function boundaryEndpoint(range: Range, boundary: Boundary, doc: Document): Endpoint | null {
+  const collapsed = range.cloneRange();
+  collapsed.collapse(boundary === 'start');
+  const collapsedRect = collapsed.getBoundingClientRect();
+
+  if (
+    Number.isFinite(collapsedRect.left)
+    && Number.isFinite(collapsedRect.top)
+    && collapsedRect.height > 0
+  ) {
+    return {
+      x: collapsedRect.left,
+      top: collapsedRect.top,
+      height: collapsedRect.height,
+    };
+  }
+
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0);
+  if (rects.length === 0) return null;
+
+  const rect = boundary === 'start' ? rects[0] : rects[rects.length - 1];
+  const container = boundary === 'start' ? range.startContainer : range.endContainer;
+  const element = container.nodeType === Node.ELEMENT_NODE
+    ? container as Element
+    : container.parentElement;
+  const direction = element ? doc.defaultView?.getComputedStyle(element).direction : 'ltr';
+  const x = boundary === 'start'
+    ? direction === 'rtl' ? rect.right : rect.left
+    : direction === 'rtl' ? rect.left : rect.right;
+
+  return { x, top: rect.top, height: rect.height };
+}
+
+function translateEndpoint(endpoint: Endpoint, iframe: HTMLIFrameElement): Endpoint {
+  const frameRect = iframe.getBoundingClientRect();
+  const viewportWidth = iframe.contentWindow?.innerWidth || iframe.clientWidth || frameRect.width;
+  const viewportHeight = iframe.contentWindow?.innerHeight || iframe.clientHeight || frameRect.height;
+  const scaleX = viewportWidth > 0 ? frameRect.width / viewportWidth : 1;
+  const scaleY = viewportHeight > 0 ? frameRect.height / viewportHeight : 1;
+
+  return {
+    x: frameRect.left + endpoint.x * scaleX,
+    top: frameRect.top + endpoint.top * scaleY,
+    height: endpoint.height * scaleY,
+  };
+}
+
+function geometryForRange(range: Range, doc: Document, iframe: HTMLIFrameElement): EndpointGeometry | null {
+  const start = boundaryEndpoint(range, 'start', doc);
+  const end = boundaryEndpoint(range, 'end', doc);
+  if (!start || !end) return null;
+
+  return {
+    start: translateEndpoint(start, iframe),
+    end: translateEndpoint(end, iframe),
+  };
+}
+
+function caretRangeFromParentPoint(
+  clientX: number,
+  clientY: number,
+  iframe: HTMLIFrameElement,
+  root: HTMLElement,
+): Range | null {
+  const doc = iframe.contentDocument;
+  if (!doc) return null;
+
+  const frameRect = iframe.getBoundingClientRect();
+  if (
+    clientX < frameRect.left
+    || clientX > frameRect.right
+    || clientY < frameRect.top
+    || clientY > frameRect.bottom
+    || frameRect.width <= 0
+    || frameRect.height <= 0
+  ) return null;
+
+  const viewportWidth = iframe.contentWindow?.innerWidth || iframe.clientWidth || frameRect.width;
+  const viewportHeight = iframe.contentWindow?.innerHeight || iframe.clientHeight || frameRect.height;
+  const x = (clientX - frameRect.left) * (viewportWidth / frameRect.width);
+  const y = (clientY - frameRect.top) * (viewportHeight / frameRect.height);
+  const caretDocument = doc as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+
+  let range: Range | null = null;
+  try {
+    if (caretDocument.caretPositionFromPoint) {
+      const position = caretDocument.caretPositionFromPoint(x, y);
+      if (position) {
+        range = doc.createRange();
+        range.setStart(position.offsetNode, position.offset);
+        range.collapse(true);
+      }
+    } else if (caretDocument.caretRangeFromPoint) {
+      range = caretDocument.caretRangeFromPoint(x, y)?.cloneRange() ?? null;
+    }
+  } catch {
+    return null;
+  }
+
+  if (!range || !rangeInsideRoot(range, root)) return null;
+  return range;
+}
+
+function sameAnchor(left: TextAnchor | null, right: TextAnchor | null): boolean {
+  return Boolean(
+    left
+    && right
+    && left.start === right.start
+    && left.end === right.end,
+  );
+}
+
+function disableUserSelection(documents: Document[]): UserSelectSnapshot {
+  const elements = new Set<HTMLElement>();
+  documents.forEach((doc) => {
+    if (doc.documentElement) elements.add(doc.documentElement);
+    if (doc.body) elements.add(doc.body);
+  });
+
+  return Array.from(elements, (element) => {
+    const value = element.style.userSelect;
+    element.style.userSelect = 'none';
+    return { element, value };
+  });
+}
+
+function restoreUserSelection(snapshot: UserSelectSnapshot | null): void {
+  snapshot?.forEach(({ element, value }) => {
+    element.style.userSelect = value;
+  });
+}
+
+export default function Resizers({ annotationId, onResize }: Props) {
+  const {
+    annotations,
+    contentRef,
+    iframeReady,
+    iframeRef,
+    updateAnnotation,
+  } = useAnnotationContext();
+  const overlay = useAnnotatorOverlayOptional();
+  const contextual = overlay?.contextual;
+  const showHighlight = overlay?.showHighlight;
+  const { isCoarsePointer: coarse, isResolved: pointerCapabilityResolved } = useCoarsePointer();
+  const nativeResizeActive = Boolean(
+    coarse
+    && contextual?.type === 'resize'
+    && contextual.annotationId === annotationId,
+  );
+  const [geometry, setGeometry] = useState<EndpointGeometry | null>(null);
+  const [dragging, setDragging] = useState<Boundary | null>(null);
   const [hiddenOnScroll, setHiddenOnScroll] = useState(false);
+  const [nativeSelectionReady, setNativeSelectionReady] = useState(false);
+  const annotationsRef = useRef(annotations);
+  const pendingRangeRef = useRef<Range | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const userSelectSnapshotRef = useRef<UserSelectSnapshot | null>(null);
+  const pointerMoveFrameRef = useRef<number | null>(null);
+  const measureFrameRef = useRef<number | null>(null);
+  const onResizeFrameRef = useRef<number | null>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
+  const latestPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const virtualDragMarkerRef = useRef(false);
+  const commitVersionRef = useRef(0);
+  const mountedRef = useRef(true);
 
-  const iframeDoc = contentRef.current?.ownerDocument ?? document;
-  const startRect = highlightStartPosition(annotationId, iframeDoc);
-  const endRect = highlightEndPosition(annotationId, iframeDoc);
+  useEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent, type: 'start' | 'end') => {
-    e.preventDefault();
-    setDragging(type);
-    // prevent text selection while dragging
-    document.body.style.userSelect = 'none';
+  const currentRange = useCallback((): Range | null => {
+    const root = contentRef.current;
+    if (!root) return null;
 
-    // initialize dragging rect to the current stick position so it doesn't jump
+    const doc = root.ownerDocument;
+    const highlighted = getHighlightRange(doc, annotationId);
+    if (highlighted) return highlighted;
+
+    const annotation = annotationsRef.current.find(({ id }) => id === annotationId);
+    if (!annotation) return null;
     try {
-      if (type === 'start') {
-        const sr = highlightStartPosition(annotationId, iframeDoc);
-        if (sr) setDraggingRect(new DOMRect(sr.left, sr.top, sr.width, sr.height));
-      } else {
-        const er = highlightEndPosition(annotationId, iframeDoc);
-        if (er) setDraggingRect(new DOMRect(er.left, er.top, er.width, er.height));
-      }
-    } catch (err) {
-      // ignore
-    }
-  }, [annotationId]);
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!dragging || !contentRef.current) return;
-
-    // cross-browser caret range from point
-    const getRangeAtPoint = (x: number, y: number): Range | null => {
-      const doc = document as unknown as {
-        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-        caretRangeFromPoint?: (x: number, y: number) => Range | null;
-      };
-      if (doc.caretPositionFromPoint) {
-        try {
-          const pos = doc.caretPositionFromPoint(x, y);
-          if (!pos) return null;
-          const r = document.createRange();
-          r.setStart(pos.offsetNode, pos.offset);
-          r.setEnd(pos.offsetNode, pos.offset);
-          return r;
-        } catch (err) {
-          return null;
-        }
-      }
-      if (doc.caretRangeFromPoint) {
-        try {
-          return doc.caretRangeFromPoint(x, y);
-        } catch (err) {
-          return null;
-        }
-      }
+      return getRange(root, annotation.text, annotation.position).range;
+    } catch {
       return null;
-    };
+    }
+  }, [annotationId, contentRef]);
 
-    const isInAnnotationSpan = (node: Node | null) => {
-      if (!node) return false;
-      let el: Node | null = node;
-      while (el && el.nodeType === Node.TEXT_NODE) el = el.parentNode;
-      if (!el || !(el as Element).closest) return false;
-      return !!(el as Element).closest(`span.highlighted-text[data-highlight-id="${annotationId}"]`);
-    };
-
-    // Try direct caret lookup first
-    let caret = getRangeAtPoint(e.clientX, e.clientY);
-
-    // If caret not inside the annotation, fallback to nearest highlighted span
-    if (!caret || !isInAnnotationSpan(caret.startContainer)) {
-      const spans = Array.from(document.querySelectorAll<HTMLSpanElement>(`span.highlighted-text[data-highlight-id="${annotationId}"]`));
-      if (spans.length === 0) return;
-
-      const x = e.clientX;
-      const y = e.clientY;
-      let chosen: HTMLSpanElement | null = null;
-      for (const s of spans) {
-        const r = s.getBoundingClientRect();
-        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-          chosen = s;
-          break;
-        }
-      }
-
-      if (!chosen) {
-        let bestDist = Infinity;
-        for (const s of spans) {
-          const r = s.getBoundingClientRect();
-          const cx = r.left + r.width / 2;
-          const cy = r.top + r.height / 2;
-          const dist = Math.hypot(cx - x, cy - y);
-          if (dist < bestDist) {
-            bestDist = dist;
-            chosen = s;
-          }
-        }
-      }
-
-      if (!chosen) return;
-
-      const chosenRect = chosen.getBoundingClientRect();
-      const clampX = Math.min(Math.max(e.clientX, chosenRect.left + 1), chosenRect.right - 1);
-      caret = getRangeAtPoint(clampX, e.clientY) || getRangeAtPoint(clampX, chosenRect.top + 2) || getRangeAtPoint(clampX, chosenRect.bottom - 2);
-      if (!caret) return;
+  const measure = useCallback(() => {
+    const root = contentRef.current;
+    const iframe = iframeRef.current;
+    if (!root || !iframe) {
+      setGeometry(null);
+      return;
     }
 
-    // At this point caret should be set and (ideally) inside the annotation. Compute its visual rect.
-    try {
-      let caretRect: DOMRect | null = null;
-      const clientRects = (caret as Range).getClientRects();
-      if (clientRects && clientRects.length > 0) {
-        const r = clientRects[0];
-        caretRect = new DOMRect(r.left, r.top, r.width, r.height);
-      } else {
-        const br = (caret as Range).getBoundingClientRect();
-        if (br && (br.width || br.height)) caretRect = new DOMRect(br.left, br.top, br.width, br.height);
-      }
-      if (caretRect) setDraggingRect(caretRect);
-    } catch (err) {
-      // ignore
+    const range = pendingRangeRef.current ?? currentRange();
+    if (!range || !rangeInsideRoot(range, root)) {
+      setGeometry(null);
+      return;
     }
-  }, [dragging, contentRef, annotationId]);
 
-  const handleMouseUp = useCallback(() => {
-    if (!dragging) return;
+    const next = geometryForRange(range, root.ownerDocument, iframe);
+    setGeometry((previous) => {
+      if (
+        previous
+        && next
+        && previous.start.x === next.start.x
+        && previous.start.top === next.start.top
+        && previous.start.height === next.start.height
+        && previous.end.x === next.end.x
+        && previous.end.top === next.end.top
+        && previous.end.height === next.end.height
+      ) return previous;
+      return next;
+    });
+  }, [contentRef, currentRange, iframeRef]);
 
-    // restore user-select
-    document.body.style.userSelect = '';
-
-    // Only update visual state; do NOT change highlights here.
-    setDragging(null);
-    setDraggingRect(null);
-  }, [dragging]);
+  const scheduleMeasure = useCallback(() => {
+    if (measureFrameRef.current !== null) return;
+    measureFrameRef.current = window.requestAnimationFrame(() => {
+      measureFrameRef.current = null;
+      measure();
+    });
+  }, [measure]);
 
   useEffect(() => {
-    if (dragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [dragging, handleMouseMove, handleMouseUp]);
+    scheduleMeasure();
+  }, [annotations, annotationId, scheduleMeasure]);
 
-  // Hide sticks while scrolling or sliding (touchmove / wheel). Re-show after debounce.
   useEffect(() => {
-    const onScrollStart = () => {
-      // mark hidden
+    if (!iframeReady) return;
+
+    const iframe = iframeRef.current;
+    const root = contentRef.current;
+    const iframeWindow = iframe?.contentWindow;
+    const iframeDocument = iframe?.contentDocument;
+    const visualViewport = window.visualViewport;
+    const onViewportChange = () => scheduleMeasure();
+    const onScroll = () => {
+      scheduleMeasure();
+      if (dragRef.current) return;
+
       setHiddenOnScroll(true);
-      // clear previous timeout
-      if (scrollTimeoutRef.current) {
+      if (scrollTimeoutRef.current !== null) {
         window.clearTimeout(scrollTimeoutRef.current);
       }
-      // set timeout to clear hidden after 150ms of no scroll events
       scrollTimeoutRef.current = window.setTimeout(() => {
-        setHiddenOnScroll(false);
         scrollTimeoutRef.current = null;
-      }, 150) as unknown as number;
+        setHiddenOnScroll(false);
+        scheduleMeasure();
+      }, 150);
     };
 
-    // Attach handlers to container (if provided) and to document/window as fallback
-    const container = contentRef?.current ?? null;
-    const opts: AddEventListenerOptions = { passive: true };
+    iframeWindow?.addEventListener('scroll', onScroll, { passive: true });
+    iframeDocument?.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    iframeWindow?.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    window.addEventListener('resize', onViewportChange);
+    visualViewport?.addEventListener('resize', onViewportChange);
+    visualViewport?.addEventListener('scroll', onViewportChange);
 
-    if (container) {
-      container.addEventListener('scroll', onScrollStart, opts);
-      container.addEventListener('touchmove', onScrollStart, opts);
-    }
-
-    document.addEventListener('scroll', onScrollStart, { passive: true, capture: true });
-    window.addEventListener('wheel', onScrollStart, { passive: true });
-    window.addEventListener('touchmove', onScrollStart, { passive: true });
+    const resizeObserver = iframe && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(onViewportChange)
+      : null;
+    if (iframe && resizeObserver) resizeObserver.observe(iframe);
+    if (root && resizeObserver) resizeObserver.observe(root);
 
     return () => {
-      if (container) {
-        container.removeEventListener('scroll', onScrollStart, opts);
-        container.removeEventListener('touchmove', onScrollStart, opts);
-      }
-      // remove with matching capture boolean
-      document.removeEventListener('scroll', onScrollStart, true);
-      window.removeEventListener('wheel', onScrollStart);
-      window.removeEventListener('touchmove', onScrollStart);
-      if (scrollTimeoutRef.current) {
+      iframeWindow?.removeEventListener('scroll', onScroll);
+      iframeDocument?.removeEventListener('scroll', onScroll, true);
+      iframeWindow?.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onViewportChange);
+      visualViewport?.removeEventListener('resize', onViewportChange);
+      visualViewport?.removeEventListener('scroll', onViewportChange);
+      resizeObserver?.disconnect();
+      if (scrollTimeoutRef.current !== null) {
         window.clearTimeout(scrollTimeoutRef.current);
         scrollTimeoutRef.current = null;
       }
     };
-  }, [contentRef]);
+  }, [contentRef, iframeReady, iframeRef, scheduleMeasure]);
 
-  if (!startRect || !endRect || startRect.width === 0 || endRect.width === 0) return <></>;
+  const commitRange = useCallback((candidate: Range): Range | null => {
+    const root = contentRef.current;
+    const iframe = iframeRef.current;
+    const annotation = annotationsRef.current.find(({ id }) => id === annotationId);
+    if (!root || !iframe || !annotation || candidate.collapsed || !rangeInsideRoot(candidate, root)) {
+      return null;
+    }
 
-  // Hide sticks while scrolling/sliding
-  if (hiddenOnScroll) return <></>;
+    let position: TextAnchor | null = null;
+    let previousPosition: TextAnchor | null = null;
+    try {
+      const index = createTextIndex(root);
+      const candidatePosition = createTextAnchor(root, candidate, index);
+      if (candidatePosition) {
+        const canonical = getRange(root, candidatePosition.exact, candidatePosition, index);
+        position = canonical.resolvedPosition ?? candidatePosition;
+      }
+      const highlighted = getHighlightRange(root.ownerDocument, annotationId);
+      previousPosition = highlighted ? createTextAnchor(root, highlighted, index) : null;
+    } catch {
+      return null;
+    }
 
-  const displayStart = (dragging === 'start' && draggingRect)
-    ? { top: draggingRect.top, left: draggingRect.left, right: draggingRect.left + draggingRect.width, height: draggingRect.height, width: draggingRect.width }
-    : startRect;
+    if (!position) return null;
+    if (sameAnchor(position, previousPosition)) {
+      return getHighlightRange(root.ownerDocument, annotationId);
+    }
 
-  const displayEnd = (dragging === 'end' && draggingRect)
-    ? { top: draggingRect.top, left: draggingRect.left, right: draggingRect.left + draggingRect.width, height: draggingRect.height, width: draggingRect.width }
-    : endRect;
+    removeHighlights(root, annotationId);
 
-  return (
+    let html: string;
+    let updatedRange: Range | null;
+    try {
+      const reconstructed = getRange(root, position.exact, position);
+      const cleanRange = reconstructed.range;
+      position = reconstructed.resolvedPosition ?? position;
+      html = cleanedHtml(rangeToHtml(cleanRange)).html;
+      highlightRange(cleanRange, annotation.color, annotationId);
+      updatedRange = getHighlightRange(root.ownerDocument, annotationId);
+      if (!updatedRange) throw new Error('The resized range could not be highlighted');
+    } catch (error) {
+      // The new anchor was created from this same document, but restore the old
+      // visual highlight if a dynamic page mutation made reconstruction fail.
+      removeHighlights(root, annotationId);
+      if (previousPosition) {
+        try {
+          const rollback = getRange(root, previousPosition.exact, previousPosition).range;
+          highlightRange(rollback, annotation.color, annotationId);
+        } catch {
+          // There is no safe DOM rollback left; persistence is intentionally
+          // skipped so a reload can reconstruct the last saved annotation.
+        }
+      }
+      console.error('Failed to resize annotation:', error);
+      scheduleMeasure();
+      return null;
+    }
+
+    annotationsRef.current = annotationsRef.current.map((item) => item.id === annotationId
+      ? { ...item, text: position.exact, html, position }
+      : item);
+    const committedVersion = ++commitVersionRef.current;
+    const savedPosition = position;
+    const persistence = updateAnnotation({
+      id: annotationId,
+      text: savedPosition.exact,
+      html,
+      position: savedPosition,
+    });
+    void persistence.then((saved) => {
+      if (
+        saved
+        || commitVersionRef.current !== committedVersion
+        || !previousPosition
+      ) return;
+
+      const latestRoot = contentRef.current;
+      const latestIframe = iframeRef.current;
+      if (
+        !latestRoot
+        || !latestRoot.isConnected
+        || latestIframe?.contentDocument !== latestRoot.ownerDocument
+      ) return;
+
+      try {
+        const index = createTextIndex(latestRoot);
+        const latestRange = getHighlightRange(latestRoot.ownerDocument, annotationId);
+        const latestPosition = latestRange
+          ? createTextAnchor(latestRoot, latestRange, index)
+          : null;
+        if (!sameAnchor(latestPosition, savedPosition)) return;
+
+        removeHighlights(latestRoot, annotationId);
+        const restored = getRange(
+          latestRoot,
+          previousPosition.exact,
+          previousPosition,
+        ).range;
+        const latestAnnotation = annotationsRef.current.find(({ id }) => id === annotationId);
+        highlightRange(restored, latestAnnotation?.color ?? annotation.color, annotationId);
+        annotationsRef.current = annotationsRef.current.map((item) => item.id === annotationId
+          ? {
+            ...item,
+            text: annotation.text,
+            html: annotation.html,
+            position: annotation.position ?? previousPosition,
+          }
+          : item);
+        void updateAnnotation({
+          id: annotationId,
+          text: annotation.text,
+          html: annotation.html ?? null,
+          position: annotation.position ?? previousPosition,
+        });
+        if (mountedRef.current) {
+          scheduleMeasure();
+          onResize?.();
+        }
+      } catch (error) {
+        console.error('Failed to roll back annotation resize:', error);
+      }
+    });
+
+    scheduleMeasure();
+    if (onResizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(onResizeFrameRef.current);
+    }
+    onResizeFrameRef.current = window.requestAnimationFrame(() => {
+      onResizeFrameRef.current = null;
+      onResize?.();
+    });
+    return updatedRange;
+  }, [annotationId, contentRef, iframeRef, onResize, scheduleMeasure, updateAnnotation]);
+
+  const updateCandidateAtPoint = useCallback((clientX: number, clientY: number) => {
+    const drag = dragRef.current;
+    const root = contentRef.current;
+    const iframe = iframeRef.current;
+    if (!drag || !root || !iframe) return;
+
+    const caret = caretRangeFromParentPoint(clientX, clientY, iframe, root);
+    if (!caret) return;
+
+    let candidate: Range;
+    try {
+      const fixed = drag.baseRange.cloneRange();
+      fixed.collapse(drag.boundary === 'end');
+      const comparison = caret.compareBoundaryPoints(Range.START_TO_START, fixed);
+      if (
+        (drag.boundary === 'start' && comparison >= 0)
+        || (drag.boundary === 'end' && comparison <= 0)
+      ) return;
+
+      candidate = root.ownerDocument.createRange();
+      if (drag.boundary === 'start') {
+        candidate.setStart(caret.startContainer, caret.startOffset);
+        candidate.setEnd(drag.baseRange.endContainer, drag.baseRange.endOffset);
+      } else {
+        candidate.setStart(drag.baseRange.startContainer, drag.baseRange.startOffset);
+        candidate.setEnd(caret.startContainer, caret.startOffset);
+      }
+      if (candidate.collapsed) return;
+    } catch {
+      return;
+    }
+
+    pendingRangeRef.current = candidate;
+    replaceFrameSelection(iframe, candidate);
+    measure();
+  }, [contentRef, iframeRef, measure]);
+
+  const queuePointerUpdate = useCallback((clientX: number, clientY: number) => {
+    latestPointerRef.current = { x: clientX, y: clientY };
+    if (pointerMoveFrameRef.current !== null) return;
+
+    pointerMoveFrameRef.current = window.requestAnimationFrame(() => {
+      pointerMoveFrameRef.current = null;
+      const point = latestPointerRef.current;
+      if (point) updateCandidateAtPoint(point.x, point.y);
+    });
+  }, [updateCandidateAtPoint]);
+
+  const finishPointerDrag = useCallback((commit: boolean) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    if (pointerMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerMoveFrameRef.current);
+      pointerMoveFrameRef.current = null;
+    }
+
+    const candidate = pendingRangeRef.current?.cloneRange() ?? null;
+    dragRef.current = null;
+    latestPointerRef.current = null;
+    restoreUserSelection(userSelectSnapshotRef.current);
+    userSelectSnapshotRef.current = null;
+    setDragging(null);
+
+    const iframe = iframeRef.current;
+    if (nativeResizeActive) {
+      const staged = commit && candidate ? candidate : drag.baseRange.cloneRange();
+      pendingRangeRef.current = staged;
+      if (iframe) replaceFrameSelection(iframe, staged);
+    } else {
+      if (iframe) replaceFrameSelection(iframe, null);
+      pendingRangeRef.current = null;
+      if (commit && candidate) commitRange(candidate);
+    }
+
+    if (virtualDragMarkerRef.current) {
+      const doc = iframe?.contentDocument;
+      if (doc?.documentElement.dataset.annotationResizeId === annotationId) {
+        delete doc.documentElement.dataset.annotationResizeId;
+      }
+      virtualDragMarkerRef.current = false;
+    }
+    scheduleMeasure();
+  }, [annotationId, commitRange, iframeRef, nativeResizeActive, scheduleMeasure]);
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>, boundary: Boundary) => {
+    if ((event.pointerType === 'mouse' && event.button !== 0) || dragRef.current) return;
+
+    const root = contentRef.current;
+    const iframe = iframeRef.current;
+    const range = currentRange();
+    if (!root || !iframe || !range) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      boundary,
+      pointerId: event.pointerId,
+      baseRange: range.cloneRange(),
+    };
+    pendingRangeRef.current = range.cloneRange();
+    const markerElement = root.ownerDocument.documentElement;
+    if (!markerElement.dataset.annotationResizeId) {
+      markerElement.dataset.annotationResizeId = annotationId;
+      virtualDragMarkerRef.current = true;
+    }
+    userSelectSnapshotRef.current = disableUserSelection([document, root.ownerDocument]);
+    setDragging(boundary);
+  }, [annotationId, contentRef, currentRange, iframeRef]);
+
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    queuePointerUpdate(event.clientX, event.clientY);
+  }, [queuePointerUpdate]);
+
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateCandidateAtPoint(event.clientX, event.clientY);
+    finishPointerDrag(true);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, [finishPointerDrag, updateCandidateAtPoint]);
+
+  const handlePointerCancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    finishPointerDrag(false);
+  }, [finishPointerDrag]);
+
+  const handleLostPointerCapture = useCallback(() => {
+    if (dragRef.current) finishPointerDrag(false);
+  }, [finishPointerDrag]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const cancel = () => finishPointerDrag(false);
+    window.addEventListener('blur', cancel);
+    return () => window.removeEventListener('blur', cancel);
+  }, [dragging, finishPointerDrag]);
+
+  useEffect(() => {
+    if (
+      !pointerCapabilityResolved
+      || coarse
+      || contextual?.type !== 'resize'
+      || contextual.annotationId !== annotationId
+    ) return;
+    showHighlight?.(annotationId);
+  }, [annotationId, coarse, contextual, pointerCapabilityResolved, showHighlight]);
+
+  useEffect(() => {
+    if (!nativeResizeActive || !iframeReady) return;
+
+    const root = contentRef.current;
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    const initialRange = currentRange();
+    if (!root || !iframe || !doc || !initialRange) {
+      const resetFrame = window.requestAnimationFrame(() => setNativeSelectionReady(false));
+      return () => window.cancelAnimationFrame(resetFrame);
+    }
+
+    let disposed = false;
+    let readyFrame: number | null = null;
+    doc.documentElement.dataset.annotationResizeId = annotationId;
+    pendingRangeRef.current = initialRange.cloneRange();
+    const selectionEstablished = replaceFrameSelection(iframe, initialRange);
+    readyFrame = window.requestAnimationFrame(() => {
+      readyFrame = null;
+      if (!disposed) setNativeSelectionReady(selectionEstablished);
+    });
+    scheduleMeasure();
+
+    const handleSelectionChange = () => {
+      const selected = getSelectedRange(iframe, root);
+      if (!selected) return;
+      pendingRangeRef.current = selected;
+      scheduleMeasure();
+    };
+
+    doc.addEventListener('selectionchange', handleSelectionChange);
+
+    return () => {
+      disposed = true;
+      if (readyFrame !== null) window.cancelAnimationFrame(readyFrame);
+      doc.removeEventListener('selectionchange', handleSelectionChange);
+      if (doc.documentElement.dataset.annotationResizeId === annotationId) {
+        delete doc.documentElement.dataset.annotationResizeId;
+      }
+      replaceFrameSelection(iframe, null);
+      pendingRangeRef.current = null;
+      scheduleMeasure();
+    };
+  }, [
+    annotationId,
+    contentRef,
+    currentRange,
+    iframeReady,
+    iframeRef,
+    nativeResizeActive,
+    scheduleMeasure,
+  ]);
+
+  const finishNativeResize = useCallback((save: boolean) => {
+    const root = contentRef.current;
+    const iframe = iframeRef.current;
+    if (!root || !iframe) return;
+
+    const selected = getSelectedRange(iframe, root);
+    const candidate = selected ?? pendingRangeRef.current?.cloneRange() ?? null;
+    if (save && candidate) commitRange(candidate);
+
+    replaceFrameSelection(iframe, null);
+    pendingRangeRef.current = null;
+    showHighlight?.(annotationId);
+    scheduleMeasure();
+  }, [annotationId, commitRange, contentRef, iframeRef, scheduleMeasure, showHighlight]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const iframe = iframeRef.current;
+    return () => {
+      mountedRef.current = false;
+      if (pointerMoveFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerMoveFrameRef.current);
+      }
+      if (measureFrameRef.current !== null) {
+        window.cancelAnimationFrame(measureFrameRef.current);
+      }
+      if (onResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(onResizeFrameRef.current);
+      }
+      if (iframe) replaceFrameSelection(iframe, null);
+      const doc = iframe?.contentDocument;
+      if (virtualDragMarkerRef.current && doc?.documentElement.dataset.annotationResizeId === annotationId) {
+        delete doc.documentElement.dataset.annotationResizeId;
+      }
+      dragRef.current = null;
+      pendingRangeRef.current = null;
+      latestPointerRef.current = null;
+      restoreUserSelection(userSelectSnapshotRef.current);
+    };
+  }, [annotationId, iframeRef]);
+
+  const overlayAllowsResize = !contextual
+    || contextual.type === 'highlight'
+    || contextual.type === 'resize';
+  if (!pointerCapabilityResolved || !overlayAllowsResize) return null;
+
+  const sharedPointerProps = {
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+    onLostPointerCapture: handleLostPointerCapture,
+  };
+
+  const handles = geometry && (!hiddenOnScroll || dragging) ? (
     <>
-      {/* Start Stick (only top knob) */}
       <div
-        className='start-stick'
+        {...sharedPointerProps}
+        className="start-stick"
+        aria-label="Resize highlight start"
+        title="Drag to resize the start of this highlight"
         style={sticksStyles.stick(
-          displayStart.top,
-          displayStart.left - STICK_WIDTH,
-          displayStart.height,
-          STICK_WIDTH
+          geometry.start.top,
+          geometry.start.x,
+          geometry.start.height,
         )}
-        onMouseDown={(e) => handleMouseDown(e, 'start')}
+        onPointerDown={(event) => handlePointerDown(event, 'start')}
       >
-        <div style={sticksStyles.knob('top', STICK_WIDTH)} />
+        <div style={sticksStyles.line(geometry.start.height, STICK_WIDTH)} />
+        <div style={sticksStyles.knob('top', geometry.start.height)} />
       </div>
-      {/* End Stick */}
       <div
-        className='end-stick'
+        {...sharedPointerProps}
+        className="end-stick"
+        aria-label="Resize highlight end"
+        title="Drag to resize the end of this highlight"
         style={sticksStyles.stick(
-          displayEnd.top,
-          displayEnd.right,
-          displayEnd.height,
-          STICK_WIDTH
+          geometry.end.top,
+          geometry.end.x,
+          geometry.end.height,
         )}
-        onMouseDown={(e) => handleMouseDown(e, 'end')}
+        onPointerDown={(event) => handlePointerDown(event, 'end')}
       >
-        <div style={sticksStyles.knob('bottom', STICK_WIDTH)} />
+        <div style={sticksStyles.line(geometry.end.height, STICK_WIDTH)} />
+        <div style={sticksStyles.knob('bottom', geometry.end.height)} />
       </div>
     </>
-  )
+  ) : null;
+
+  if (coarse) {
+    if (!nativeResizeActive) return null;
+    return (
+      <>
+        {!nativeSelectionReady && handles}
+        <div
+          role="toolbar"
+          aria-label="Mobile highlight resize actions"
+          style={sticksStyles.mobileActions}
+        >
+          <span style={sticksStyles.mobileHint}>
+            Adjust the selection handles, then save.
+          </span>
+          <Button
+            variant="ghost"
+            size="small"
+            leadingIcon={<Times size={12} aria-hidden="true" />}
+            onClick={() => finishNativeResize(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="small"
+            leadingIcon={<Save size={12} aria-hidden="true" />}
+            onClick={() => finishNativeResize(true)}
+          >
+            Done
+          </Button>
+        </div>
+      </>
+    );
+  }
+
+  return handles;
 }

@@ -32,6 +32,23 @@ export function useFocusedId() {
     const handleInteraction = (e: Event) => {
       const target = e.target as Element;
 
+      // Native selection handles are used to resize an existing annotation on
+      // coarse-pointer devices. Their pointerup can land outside the original
+      // highlight, so keep the focused menu open while that managed selection
+      // is active.
+      if (
+        (
+          (overlay?.contextual.type === 'resize'
+            && overlay.contextual.annotationId === focusedIdRef.current)
+          || iDoc.documentElement.dataset.annotationResizeId === focusedIdRef.current
+        )
+      ) {
+        const selection = iDoc.getSelection();
+        if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+          return;
+        }
+      }
+
       // Don't handle clicks on the menu itself
       if (target.closest('[role="toolbar"][aria-label="Highlight actions"]')) {
         return;

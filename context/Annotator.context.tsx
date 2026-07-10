@@ -9,6 +9,15 @@ import { ensurePage, syncTimestamp } from "../utils/syncData";
 
 type AnnotationPosition = NonNullable<Annotation['position']>;
 
+type AnnotationUpdate = {
+  id: string;
+  comment?: string;
+  color?: string;
+  text?: string;
+  html?: string | null;
+  position?: AnnotationPosition;
+};
+
 type AnnotationContextProps = {
   children: ReactNode;
   initialAnnotations?: Annotation[];
@@ -36,7 +45,7 @@ type AnnotationContextType = {
   setCurrentHighlightColor: React.Dispatch<React.SetStateAction<string>>;
   addAnnotation: (payload: { text: string; html: string; color: string; position?: AnnotationPosition }) => Promise<{ tempId: string; promise: Promise<string> }>;
   deleteAnnotation: (id: string) => void;
-  updateAnnotation: (params: { id: string; comment?: string; color?: string; text?: string; html?: string }) => void;
+  updateAnnotation: (params: AnnotationUpdate) => Promise<boolean>;
   syncStatus: 'synced' | 'syncing' | 'to-sync';
   lastAutoSaveStatus: { success: boolean; message: string } | null;
 };
@@ -93,22 +102,22 @@ export function AnnotationContext({
 
     const promise = (async () => {
       try {
-        await ensurePage(pageUrl, title ?? '');
+        const page = await ensurePage(pageUrl, title ?? '');
+        const canonicalPageId = String(page.id);
 
         if (title) {
-          const existingPages = await db.select('id', 'title').from('pages').where(eq('id', pageId)).execute();
+          const existingPages = await db.select('id', 'title').from('pages').where(eq('id', canonicalPageId)).execute();
           const existingPage = existingPages && existingPages.length ? existingPages[0] : null;
           if (existingPage && existingPage.title !== title) {
             await db.update({ title, updated_at: syncTimestamp() })
               .from('pages')
-              .where(eq('id', pageId))
+              .where(eq('id', canonicalPageId))
               .execute();
           }
         }
 
-        await db.insert({
-          id: tempId,
-          page_id: pageId,
+        const result = await db.insert({
+          page_id: canonicalPageId,
           text,
           html: html || null,
           color,
@@ -117,9 +126,17 @@ export function AnnotationContext({
           updated_at: now,
           position: position ?? null,
         }).from('annotations').execute();
+        const insertedId = result.rows[0]?.id;
+        if (!insertedId) throw new Error('Annotation insert did not return an id');
+
+        setAnnotations(prev => prev.map(ann => (
+          ann.id === tempId
+            ? { ...ann, id: String(insertedId), page_id: canonicalPageId }
+            : ann
+        )));
 
         setLastAutoSaveStatus({ success: true, message: "Annotation queued (offline-first)" });
-        return tempId;
+        return String(insertedId);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         setLastAutoSaveStatus({ success: false, message: errorMessage });
@@ -146,8 +163,8 @@ export function AnnotationContext({
     }
   }, [contentRef]);
 
-  const updateAnnotation = useCallback(async (params: { id: string; comment?: string; color?: string; text?: string; html?: string }) => {
-    const { id, comment, color, text, html } = params;
+  const updateAnnotation = useCallback(async (params: AnnotationUpdate) => {
+    const { id, comment, color, text, html, position } = params;
 
     // If color is updated, also update DOM highlights immediately for UX.
     if (color !== undefined && contentRef.current) {
@@ -166,6 +183,7 @@ export function AnnotationContext({
       if (color !== undefined) updated.color = color;
       if (text !== undefined) updated.text = text;
       if (html !== undefined) updated.html = html;
+      if (position !== undefined) updated.position = position;
       return updated;
     }));
 
@@ -173,14 +191,17 @@ export function AnnotationContext({
       const changes: Record<string, unknown> = { updated_at: syncTimestamp() };
       if (text !== undefined) changes.text = text;
       if (html !== undefined) changes.html = html;
+      if (position !== undefined) changes.position = position;
       if (color !== undefined) changes.color = color;
       if (comment !== undefined) changes.comment = comment !== '' ? comment : null;
       await db.update(changes).from('annotations').where(eq('id', id)).execute();
       setLastAutoSaveStatus({ success: true, message: "Annotation update queued" });
+      return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setLastAutoSaveStatus({ success: false, message: errorMessage });
       console.error("Failed to queue annotation update:", error);
+      return false;
     }
   }, [contentRef]);
 
@@ -205,7 +226,7 @@ export function AnnotationContext({
     updateAnnotation,
     syncStatus,
     lastAutoSaveStatus,
-  }), [contentRef, iframeRef, iframeReady, annotations, pageUrl, title, currentHighlightColor,
+  }), [contentRef, iframeRef, iframeReady, annotations, iframeUrl, pageUrl, title, currentHighlightColor,
     setCurrentHighlightColor, addAnnotation, deleteAnnotation, updateAnnotation,
     syncStatus, lastAutoSaveStatus]);
 

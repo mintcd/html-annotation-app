@@ -24,6 +24,7 @@ import PromptBox from './PromptBox';
 import AnnotationList from './AnnotationList';
 import { normalizeUrl } from '../utils/url';
 import { ensurePage, getOrCreateWebsite, normalizeAnnotationRow, syncTimestamp } from '../utils/syncData';
+import { deleteFrameBundle } from '../utils/frameCache';
 
 
 interface AnnotationPage {
@@ -1184,6 +1185,25 @@ export default function Dashboard() {
         await db.delete().from('annotations').where(eq('id', annotation.id)).execute();
       }
       await db.delete().from('pages').where(eq('id', pageRow.id)).execute();
+
+      try {
+        const sourceUrl = new URL(pageUrl);
+        const website = (
+          await db
+            .select('id')
+            .from('websites')
+            .where(eq('origin', sourceUrl.origin))
+            .execute()
+        )[0];
+        if (website) {
+          const pathname = sourceUrl.pathname === '/' ? '' : sourceUrl.pathname;
+          await deleteFrameBundle(`/_frame/${website.id}${pathname}${sourceUrl.search}`);
+        }
+      } catch (cacheError) {
+        // The synced page deletion is authoritative. A cache cleanup failure
+        // should not make the user repeat it.
+        console.warn('Failed to remove the saved page bundle', cacheError);
+      }
     } catch (error) {
       alert(`Error deleting page: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {

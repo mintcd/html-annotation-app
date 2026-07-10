@@ -17,6 +17,36 @@ type UseMobileReturn = {
   updateViewportInfo: () => void;
 };
 
+type UseCoarsePointerReturn = {
+  isCoarsePointer: boolean;
+  isResolved: boolean;
+};
+
+/** True when the device's primary pointing input is coarse and has no hover. */
+export function useCoarsePointer(): UseCoarsePointerReturn {
+  const [state, setState] = useState<UseCoarsePointerReturn>({
+    isCoarsePointer: false,
+    isResolved: false,
+  });
+
+  useEffect(() => {
+    const media = window.matchMedia('(pointer: coarse) and (hover: none)');
+    const update = () => setState({
+      isCoarsePointer: media.matches,
+      isResolved: true,
+    });
+    update();
+    if (media.addEventListener) media.addEventListener('change', update);
+    else media.addListener(update);
+    return () => {
+      if (media.removeEventListener) media.removeEventListener('change', update);
+      else media.removeListener(update);
+    };
+  }, []);
+
+  return state;
+}
+
 export function useMobile(): UseMobileReturn {
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [isIOS, setIsIOS] = useState<boolean>(false);
@@ -47,7 +77,7 @@ export function useMobile(): UseMobileReturn {
   useEffect(() => {
     if (!isMobile) return;
 
-    updateViewportInfo();
+    const initialFrame = window.requestAnimationFrame(updateViewportInfo);
 
     // Listen to visualViewport events for mobile-specific changes
     if (window.visualViewport) {
@@ -56,6 +86,7 @@ export function useMobile(): UseMobileReturn {
     }
 
     return () => {
+      window.cancelAnimationFrame(initialFrame);
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', updateViewportInfo);
         window.visualViewport.removeEventListener('scroll', updateViewportInfo);

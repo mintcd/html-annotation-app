@@ -13,6 +13,7 @@ import { db } from '../utils/engine';
 import { awaitDomSettled, trackScriptExecution } from '../utils/dom';
 import { normalizeUrl } from '../utils/url';
 import { highlightAnnotations } from '../utils/annotations';
+import { refreshFrameBundle } from '../utils/frameCache';
 import {
   ensurePage,
   getOrCreateWebsite,
@@ -80,6 +81,14 @@ export function useAnnotatorController({
     setIframeReady(false);
     setIframeError('');
 
+    const frameError = doc
+      .querySelector<HTMLMetaElement>('meta[name="frame-error"]')
+      ?.content.trim();
+    if (frameError) {
+      setIframeError(frameError);
+      return;
+    }
+
     await awaitDomSettled(iframe);
     if (frameLoadId.current !== loadId || iframe.contentDocument !== doc) return;
     trackScriptExecution(iframe);
@@ -141,11 +150,19 @@ export function useAnnotatorController({
     setIframeError(message);
   }, []);
 
-  const reloadFrame = useCallback(() => {
+  const reloadFrame = useCallback(async () => {
     setIframeReady(false);
     setIframeError('');
     initialHighlightsApplied.current = false;
-    if (iframeRef.current) iframeRef.current.src = iframeUrl;
+    if (!iframeRef.current) return;
+
+    try {
+      // Pasted HTML changes the page source, so a normal cache-first reload
+      // would incorrectly keep showing the previous local copy.
+      await refreshFrameBundle(iframeUrl, iframeRef.current);
+    } catch (error) {
+      setIframeError(error instanceof Error ? error.message : 'Failed to reload page');
+    }
   }, [iframeUrl]);
 
   const openInAnnotator = useCallback(async (href: string) => {

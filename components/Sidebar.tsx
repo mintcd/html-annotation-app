@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAnnotationContext } from "../context/Annotator.context";
-import { prefetchResourcesForUrl } from '@/utils/frameCache';
+import { refreshFrameBundle } from '@/utils/frameCache';
 import { useMobile, useHotkey } from "../hooks";
 import { useResize, useClickOutside } from "../hooks/Sidebar.hooks";
 import AnnotationList from "./AnnotationList";
@@ -146,15 +146,17 @@ export default function Sidebar({
   const refreshResources = useCallback(async () => {
     try {
       setIsRefreshing(true);
-      const target = iframeRef?.current?.src || iframeUrl || pageUrl || window.location.href;
-      await prefetchResourcesForUrl(target);
+      const iframe = iframeRef.current;
+      if (!iframe || !iframeUrl) throw new Error('The page frame is not ready.');
+      await refreshFrameBundle(iframeUrl, iframe);
     } catch (error) {
       console.error('Refresh failed', error);
-      alert('Failed to refresh resources');
+      const detail = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Refresh did not complete. The most recently saved copy is still available.\n\n${detail}`);
     } finally {
       setIsRefreshing(false);
     }
-  }, [iframeRef, iframeUrl, pageUrl]);
+  }, [iframeRef, iframeUrl]);
 
   const syncLabel = syncStatus === 'syncing'
     ? 'Syncing'
@@ -266,8 +268,8 @@ export default function Sidebar({
                   </IconButton>
                 )}
                 <IconButton
-                  label={isRefreshing ? 'Refreshing page resources' : 'Refresh page resources'}
-                  title="Refresh page resources"
+                  label={isRefreshing ? 'Refreshing saved page' : 'Refresh saved page'}
+                  title="Fetch and save the latest page"
                   size="small"
                   disabled={isRefreshing}
                   onClick={() => void refreshResources()}

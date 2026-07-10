@@ -18,6 +18,7 @@ export type AnnotatorContextualOverlay =
   | { type: "none" }
   | { type: "selection" }
   | { type: "highlight"; annotationId: string }
+  | { type: "resize"; annotationId: string }
   | { type: "comment"; annotationId: string }
   | { type: "color"; annotationId: string };
 
@@ -90,6 +91,7 @@ export type AnnotatorOverlayContextValue = {
   setContextual: (contextual: AnnotatorContextualOverlay) => void;
   showSelection: () => void;
   showHighlight: (annotationId: string) => void;
+  showResize: (annotationId: string) => void;
   showComment: (annotationId: string) => void;
   showColor: (annotationId: string) => void;
   clearContextual: () => void;
@@ -147,6 +149,10 @@ export function AnnotatorOverlayProvider({
   const showSelection = useCallback(() => setContextual({ type: "selection" }), [setContextual]);
   const showHighlight = useCallback(
     (annotationId: string) => setContextual({ type: "highlight", annotationId }),
+    [setContextual],
+  );
+  const showResize = useCallback(
+    (annotationId: string) => setContextual({ type: "resize", annotationId }),
     [setContextual],
   );
   const showComment = useCallback(
@@ -207,6 +213,7 @@ export function AnnotatorOverlayProvider({
     setContextual,
     showSelection,
     showHighlight,
+    showResize,
     showComment,
     showColor,
     clearContextual,
@@ -230,6 +237,7 @@ export function AnnotatorOverlayProvider({
     showComment,
     showExternalLink,
     showHighlight,
+    showResize,
     showPasteHtml,
     showSelection,
     state,

@@ -2,7 +2,7 @@
 import { createRepo } from '@mintcd/sync-engine';
 
 export const finalConfig = {
-  swPath: "/sw.js"
+  swPath: "/sw.sync.js"
 };
 
 type Schema = {
@@ -53,4 +53,11 @@ type Schema = {
     "instance_id": string | null;
   };
 };
-export const db = createRepo<Schema>();
+type PrimaryKeys = {
+  "pages": "id";
+  "websites": "id";
+  "site_cookies": "site_id";
+  "annotations": "id";
+  "operations": "id";
+};
+export const db = createRepo<Schema, PrimaryKeys>();

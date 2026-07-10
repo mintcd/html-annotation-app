@@ -1,7 +1,6 @@
 import { eq } from '@mintcd/sync-engine';
 import { db } from './engine';
-import { generatePageId } from './api-helpers';
-import { normalizeUrl, originToSlug } from './url';
+import { normalizeUrl } from './url';
 
 export function syncTimestamp(): string {
   return new Date().toISOString();
@@ -13,8 +12,7 @@ export async function ensurePage(rawUrl: string, title = ''): Promise<Page> {
   if (existing[0]) return existing[0] as Page;
 
   const now = syncTimestamp();
-  const page: Page = {
-    id: await generatePageId(url),
+  const page: Omit<Page, 'id'> = {
     url,
     title,
     number_of_scripts: 0,
@@ -23,8 +21,10 @@ export async function ensurePage(rawUrl: string, title = ''): Promise<Page> {
     updated_at: now,
   };
 
-  await db.insert(page).from('pages').execute();
-  return page;
+  const result = await db.insert(page).from('pages').execute();
+  const inserted = result.rows[0];
+  if (!inserted) throw new Error(`Failed to create page for ${url}`);
+  return inserted as Page;
 }
 
 export async function getOrCreateWebsite(rawOrigin: string): Promise<Website> {
@@ -32,19 +32,12 @@ export async function getOrCreateWebsite(rawOrigin: string): Promise<Website> {
   const existing = await db.select().from('websites').where(eq('origin', origin)).execute();
   if (existing[0]) return existing[0] as Website;
 
-  const baseSlug = originToSlug(origin);
-  let id = baseSlug;
-  let suffix = 1;
-
-  while ((await db.select('id').from('websites').where(eq('id', id)).execute()).length > 0) {
-    suffix += 1;
-    id = `${baseSlug}-${suffix}`;
-  }
-
   const now = syncTimestamp();
-  const website: Website = { id, origin, created_at: now, updated_at: now };
-  await db.insert(website).from('websites').execute();
-  return website;
+  const website: Omit<Website, 'id'> = { origin, created_at: now, updated_at: now };
+  const result = await db.insert(website).from('websites').execute();
+  const inserted = result.rows[0];
+  if (!inserted) throw new Error(`Failed to create website for ${origin}`);
+  return inserted as Website;
 }
 
 export function normalizeAnnotationRow(row: Record<string, unknown>): Annotation {

@@ -5,8 +5,8 @@ import { eq, useLiveQuery, useSyncStatus } from "@mintcd/sync-engine";
 import Annotator from "@/components/Annotator";
 import Loader from "@/components/Loader";
 import { db } from "@/utils/engine";
-import { generatePageId } from "@/utils/api-helpers";
 import { normalizeUrl, appPathToPageUrl } from "@/utils/url";
+import { ensurePage } from "@/utils/syncData";
 
 type SitePageClientProps = {
   site: string;
@@ -34,28 +34,44 @@ function ResolvedSitePage({
   search,
   origin,
 }: SitePageClientProps & { origin: string }) {
+  const sync = useSyncStatus();
   const url = useMemo(
     () => normalizeUrl(appPathToPageUrl(origin, path, search)),
     [origin, path, search],
   );
-  const [pageId, setPageId] = useState<string>();
+  const page = useLiveQuery(db.select().from("pages").where(eq("url", url)));
+  const pageRow = page.data?.[0];
+  const [createError, setCreateError] = useState<string>();
 
   useEffect(() => {
     let active = true;
-    void generatePageId(url).then((id) => {
-      if (active) setPageId(id);
+    setCreateError(undefined);
+
+    if (page.loading || pageRow || sync.isSyncing) {
+      return () => {
+        active = false;
+      };
+    }
+
+    void ensurePage(url).catch((error) => {
+      if (!active) return;
+      setCreateError(error instanceof Error ? error.message : String(error));
     });
+
     return () => {
       active = false;
     };
-  }, [url]);
+  }, [page.loading, pageRow, sync.isSyncing, url]);
 
-  if (!pageId) return <Loader />;
+  if (page.loading || (!pageRow && sync.isSyncing)) return <Loader />;
+  if (page.error) return <PageError message={page.error} />;
+  if (createError) return <PageError message={createError} />;
+  if (!pageRow) return <Loader />;
 
   const framePathname = path?.length ? path.join("/") : "";
   const frameUrl = `/_frame/${site}${framePathname ? `/${framePathname}` : ""}${search}`;
 
-  return <Annotator pageId={pageId} pageUrl={url} iframeUrl={frameUrl} />;
+  return <Annotator pageId={String(pageRow.id)} pageUrl={url} iframeUrl={frameUrl} />;
 }
 
 function PageError({ message }: { message: string }) {

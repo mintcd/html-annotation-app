@@ -161,7 +161,7 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
                   path={controller.framePath}
                   onSuccess={() => {
                     overlay.closeDialog();
-                    controller.reloadFrame();
+                    void controller.reloadFrame();
                   }}
                   onClose={overlay.closeDialog}
                 />

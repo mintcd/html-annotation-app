@@ -121,7 +121,13 @@ function frameErrorResponse(message: string): Response {
 </head><body></body></html>`;
   return new Response(html, {
     status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      // The browser-local cache must never replace a working page with this
+      // HTTP-200 fallback document during an explicit refresh.
+      'X-Annotation-Frame-Error': '1',
+    },
   });
 }
 
@@ -144,7 +150,7 @@ export async function GET(
 
     const row = await env.DB.prepare('SELECT origin FROM websites WHERE id = ?')
       .bind(site).first<{ origin: string }>();
-    if (!row) return new Response(`Unknown site: ${site}`, { status: 404 });
+    if (!row) return frameErrorResponse(`Unknown site: ${site}`);
     siteOrigin = row.origin;
 
     // ── Check R2 bucket for user-pasted HTML ───────────────────────────
@@ -152,7 +158,7 @@ export async function GET(
     const stored = await env.WEBPAGES_BUCKET.get(r2Key);
     if (stored) storedHtml = await stored.text();
   } catch {
-    return new Response('Database unavailable', { status: 503 });
+    return frameErrorResponse('Database unavailable');
   }
 
   // ── 2. Fetch upstream HTML ─────────────────────────────────────────────
@@ -186,6 +192,12 @@ export async function GET(
       if (siteCookie?.trim()) reqHeaders['cookie'] = siteCookie;
 
       const upstream = await fetchWithCookies(targetUrl, reqHeaders);
+
+      if (!upstream.ok) {
+        return frameErrorResponse(
+          `Source page returned ${upstream.status} ${upstream.statusText || 'Error'}`,
+        );
+      }
 
       html = await upstream.text();
       finalUrl = upstream.url;

@@ -65,6 +65,17 @@ export function parseJsonField<T extends Record<string, unknown>>(row: T, field:
   }
 }
 
+export function parseJsonFields<T extends Record<string, unknown>>(
+  row: T,
+  schema: Record<string, string>,
+): T {
+  let parsed = row;
+  for (const [field, sqliteType] of Object.entries(schema)) {
+    if (/JSON/i.test(sqliteType)) parsed = parseJsonField(parsed, field);
+  }
+  return parsed;
+}
+
 export function validateData(data: Record<string, unknown>, schema: Record<string, string>): { ok: boolean; error?: string } {
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined || value === null) continue;

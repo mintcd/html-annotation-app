@@ -416,6 +416,13 @@ export function cleanedHtml(html: string): { html: string; mathSource?: string }
   tempDiv.innerHTML = html;
   const clone = tempDiv.cloneNode(true) as HTMLElement;
 
+  // Annotation wrappers are presentation-only and must never leak into saved
+  // excerpts (notably when an existing highlight is resized across another
+  // highlight). Keep their contents and discard only annotator-owned markup.
+  clone.querySelectorAll('span.highlighted-text[data-highlight-id]').forEach((span) => {
+    span.replaceWith(...Array.from(span.childNodes));
+  });
+
   // Remove only the noisy/assistive MathJax elements that interfere with
   // saving/re-processing. Preserve core rendered output (e.g. .MathJax,
   // .katex) and <math> nodes so the Dashboard can display already-rendered
@@ -1217,9 +1224,13 @@ export function removeHighlights(container: HTMLElement, id: string): void {
     `span.highlighted-text[data-highlight-id="${id}"]`
   );
 
+  const affectedParents = new Set<Node>();
+
   spans.forEach((span) => {
     const parent = span.parentNode;
     if (!parent) return;
+
+    affectedParents.add(parent);
 
     // Unwrap span → put back its contents (text nodes or elements)
     while (span.firstChild) {
@@ -1227,4 +1238,9 @@ export function removeHighlights(container: HTMLElement, id: string): void {
     }
     parent.removeChild(span);
   });
+
+  // Repeated resize/delete cycles otherwise leave a growing number of
+  // adjacent text nodes. Normalizing once per affected parent keeps later
+  // range lookup and caret movement inexpensive.
+  affectedParents.forEach((parent) => parent.normalize());
 }

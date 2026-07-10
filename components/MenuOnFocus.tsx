@@ -4,7 +4,8 @@ import ColorPicker from "./ColorPicker";
 import { useAnnotationContext } from "../context/Annotator.context";
 import { useAnnotatorOverlayOptional } from "../context/AnnotatorOverlay.context";
 import { useFocusedId } from "../hooks/MenuOnFocus.hooks";
-import { Delete, Highlighter, Comment, Send } from "../app/icons";
+import { useCoarsePointer } from "../hooks";
+import { Delete, Highlighter, Comment, Resize, Send } from "../app/icons";
 import { IconButton } from "../design-system/icon-button";
 import useMenuOnFocusStyles from "../styles/MenuOnFocus.styles";
 import Resizers from "./Resizers";
@@ -43,6 +44,9 @@ function FocusedHighlightMenu({ focusedId, setFocusedId }: FocusedHighlightMenuP
   const commentButtonRef = useRef<HTMLButtonElement>(null);
   const { contentRef, iframeRef, annotations, deleteAnnotation, setCurrentHighlightColor, updateAnnotation } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
+  const { isCoarsePointer } = useCoarsePointer();
+  const isResizeMode = overlay?.contextual.type === 'resize'
+    && overlay.contextual.annotationId === focusedId;
 
   useEffect(() => {
     if (showCommentInput && commentTextareaRef.current) {
@@ -84,23 +88,32 @@ function FocusedHighlightMenu({ focusedId, setFocusedId }: FocusedHighlightMenuP
 
   useEffect(() => {
     const iframeWindow = iframeRef.current?.contentWindow;
+    const iframeDocument = iframeRef.current?.contentDocument;
+    const content = contentRef.current;
     const visualViewport = window.visualViewport;
     const animationFrame = window.requestAnimationFrame(measureAnchor);
     iframeWindow?.addEventListener('scroll', measureAnchor, { passive: true });
+    iframeDocument?.addEventListener('scroll', measureAnchor, { passive: true, capture: true });
     iframeWindow?.addEventListener('resize', measureAnchor);
     window.addEventListener('resize', measureAnchor);
     visualViewport?.addEventListener('resize', measureAnchor);
     visualViewport?.addEventListener('scroll', measureAnchor);
+    const resizeObserver = content && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(measureAnchor)
+      : null;
+    if (content && resizeObserver) resizeObserver.observe(content);
 
     return () => {
       window.cancelAnimationFrame(animationFrame);
       iframeWindow?.removeEventListener('scroll', measureAnchor);
+      iframeDocument?.removeEventListener('scroll', measureAnchor, true);
       iframeWindow?.removeEventListener('resize', measureAnchor);
       window.removeEventListener('resize', measureAnchor);
       visualViewport?.removeEventListener('resize', measureAnchor);
       visualViewport?.removeEventListener('scroll', measureAnchor);
+      resizeObserver?.disconnect();
     };
-  }, [iframeRef, measureAnchor]);
+  }, [contentRef, iframeRef, measureAnchor]);
 
   const styles = useMenuOnFocusStyles(menuRef, anchorRect, textareaFocus, commentAnchor);
   const currentAnnotation = annotations.find((annotation) => annotation.id === focusedId);
@@ -176,15 +189,17 @@ function FocusedHighlightMenu({ focusedId, setFocusedId }: FocusedHighlightMenuP
   };
 
   return (
-    anchorRect &&
     <>
-      <div
-        ref={menuRef}
-        role="toolbar"
-        aria-label="Highlight actions"
-        onKeyDown={handleToolbarKeyDown}
-        style={styles.menuContainer}
-      >
+      {anchorRect && (
+        <>
+      {!isResizeMode && (
+        <div
+          ref={menuRef}
+          role="toolbar"
+          aria-label="Highlight actions"
+          onKeyDown={handleToolbarKeyDown}
+          style={styles.menuContainer}
+        >
         <IconButton
           ref={commentButtonRef}
           label={currentAnnotation?.comment ? "Edit comment" : "Add comment"}
@@ -224,14 +239,32 @@ function FocusedHighlightMenu({ focusedId, setFocusedId }: FocusedHighlightMenuP
           </span>
         </IconButton>
 
+        {isCoarsePointer && (
+          <IconButton
+            label="Resize highlight"
+            size={styles.controlSize}
+            tone="neutral"
+            tabIndex={toolbarFocusIndex === 2 ? 0 : -1}
+            onFocus={() => setToolbarFocusIndex(2)}
+            onClick={() => {
+              setShowColorPicker(false);
+              setShowCommentInput(false);
+              overlay?.showResize(focusedId);
+            }}
+            title="Resize highlight"
+          >
+            <Resize size={18} aria-hidden="true" />
+          </IconButton>
+        )}
+
         <span style={styles.separator} aria-hidden="true" />
 
         <IconButton
           label="Delete highlight"
           size={styles.controlSize}
           tone="danger"
-          tabIndex={toolbarFocusIndex === 2 ? 0 : -1}
-          onFocus={() => setToolbarFocusIndex(2)}
+          tabIndex={toolbarFocusIndex === (isCoarsePointer ? 3 : 2) ? 0 : -1}
+          onFocus={() => setToolbarFocusIndex(isCoarsePointer ? 3 : 2)}
           onClick={() => {
             deleteAnnotation(focusedId);
             setFocusedId(null);
@@ -240,7 +273,8 @@ function FocusedHighlightMenu({ focusedId, setFocusedId }: FocusedHighlightMenuP
         >
           <Delete size={19} aria-hidden="true" />
         </IconButton>
-      </div>
+        </div>
+      )}
 
       {showColorPicker && (
         <ColorPicker
@@ -308,7 +342,9 @@ function FocusedHighlightMenu({ focusedId, setFocusedId }: FocusedHighlightMenuP
           <span style={styles.saveHint}>Ctrl/⌘ + Enter to save</span>
         </div>
       )}
-      {focusedId && <Resizers annotationId={focusedId} />}
+        </>
+      )}
+      {focusedId && <Resizers annotationId={focusedId} onResize={measureAnchor} />}
     </>
   );
 }
