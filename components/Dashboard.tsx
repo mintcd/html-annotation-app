@@ -1197,7 +1197,7 @@ export default function Dashboard() {
         )[0];
         if (website) {
           const pathname = sourceUrl.pathname === '/' ? '' : sourceUrl.pathname;
-          await deleteFrameBundle(`/_frame/${website.id}${pathname}${sourceUrl.search}`);
+          await deleteFrameBundle(`/frame/${website.id}${pathname}${sourceUrl.search}`);
         }
       } catch (cacheError) {
         // The synced page deletion is authoritative. A cache cleanup failure

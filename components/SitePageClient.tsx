@@ -69,7 +69,7 @@ function ResolvedSitePage({
   if (!pageRow) return <Loader />;
 
   const framePathname = path?.length ? path.join("/") : "";
-  const frameUrl = `/_frame/${site}${framePathname ? `/${framePathname}` : ""}${search}`;
+  const frameUrl = `/frame/${site}${framePathname ? `/${framePathname}` : ""}${search}`;
 
   return <Annotator pageId={String(pageRow.id)} pageUrl={url} iframeUrl={frameUrl} />;
 }

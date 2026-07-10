@@ -130,13 +130,13 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   });
 
   // Slug-aware proxy URL builder — used everywhere below.
-  // Assets go to /_proxy/{slug}{pathname} so they never collide with the
+  // Assets go to /proxy/{slug}{pathname} so they never collide with the
   // [site]/[[...path]] page route. No middleware needed.
   function proxiedUrl(targetUrl: string): string {
     try {
       const u = new URL(targetUrl);
       const slug = slugMap.get(u.origin) ?? originToSlug(u.origin);
-      return `/_proxy/${slug}${u.pathname}${u.search}${u.hash}`;
+      return `/proxy/${slug}${u.pathname}${u.search}${u.hash}`;
     } catch {
       return targetUrl;
     }
@@ -256,19 +256,19 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     } else if (content) {
       let rewrittenContent = content;
       rewrittenContent = rewrittenContent.replace(/(?:[\"']?)src(?:[\"']?)\s*:\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/_proxy/')) return m;
+        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
         return `src: ${q}${proxiedUrl(absoluteUrl(clonedBase, u))}${q}`;
       });
       rewrittenContent = rewrittenContent.replace(/\.src\s*=\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/_proxy/')) return m;
+        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
         return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
       });
       rewrittenContent = rewrittenContent.replace(/setAttribute\(\s*("|')src\1\s*,\s*("|')(.*?)\2\s*\)/g, (m: any, _q1: any, q2: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/_proxy/')) return m;
+        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
         return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
       });
       rewrittenContent = rewrittenContent.replace(/(\w+)\s*:\s*['"](\/[^'\"]*)['"]/g, (m: any, prop: any, u: any) => {
-        if (prop === 'src' && !u.startsWith('http') && !u.startsWith('//') && !isSkippable(u) && !u.includes('/_proxy/')) {
+        if (prop === 'src' && !u.startsWith('http') && !u.startsWith('//') && !isSkippable(u) && !u.includes('/proxy/')) {
           return `${prop}: '${proxiedUrl(absoluteUrl(clonedBase, u))}'`;
         }
         return m;
@@ -298,19 +298,19 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     } else if (content) {
       let rewrittenContent = content;
       rewrittenContent = rewrittenContent.replace(/(?:[\"']?)src(?:[\"']?)\s*:\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/_proxy/')) return m;
+        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
         return `src: ${q}${proxiedUrl(absoluteUrl(clonedBase, u))}${q}`;
       });
       rewrittenContent = rewrittenContent.replace(/\.src\s*=\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/_proxy/')) return m;
+        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
         return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
       });
       rewrittenContent = rewrittenContent.replace(/setAttribute\(\s*("|')src\1\s*,\s*("|')(.*?)\2\s*\)/g, (m: any, _q1: any, q2: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/_proxy/')) return m;
+        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
         return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
       });
       rewrittenContent = rewrittenContent.replace(/(\w+)\s*:\s*['"](\/[^'\"]*)['"]/g, (m: any, prop: any, u: any) => {
-        if (prop === 'src' && !u.startsWith('http') && !u.startsWith('//') && !isSkippable(u) && !u.includes('/_proxy/')) {
+        if (prop === 'src' && !u.startsWith('http') && !u.startsWith('//') && !isSkippable(u) && !u.includes('/proxy/')) {
           return `${prop}: '${proxiedUrl(absoluteUrl(clonedBase, u))}'`;
         }
         return m;

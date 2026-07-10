@@ -16,7 +16,7 @@ importScripts('/sw.sync.js');
   const CONTROL_CACHE = `annotation-frame-control-${FRAME_CACHE_VERSION}`;
   const CONTROL_CACHE_FAMILY = 'annotation-frame-control-';
   const LEGACY_CACHE = 'frames-cache-v1';
-  const FRAME_PATH_PREFIX = '/_frame/';
+  const FRAME_PATH_PREFIX = '/frame/';
   const REFRESH_HEADER = 'x-annotation-frame-refresh';
   const FRAME_ERROR_HEADER = 'x-annotation-frame-error';
   const DEFAULT_REFRESH_WINDOW_MS = 60_000;

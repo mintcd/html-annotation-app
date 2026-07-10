@@ -1,7 +1,7 @@
 // ─── Asset Proxy ─────────────────────────────────────────────────────────────
 //
 // This route is never hit directly by the browser. Next.js middleware rewrites
-// /{site-slug}/path/to/file.ext → /_proxy/{site-slug}/path/to/file.ext so that
+// /{site-slug}/path/to/file.ext -> /proxy/{site-slug}/path/to/file.ext so that
 // asset URLs in cloned pages look like  /plato-stanford-edu/scripts/app.js
 // while this handler fetches the real upstream content.
 //

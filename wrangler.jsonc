@@ -2,47 +2,42 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "annotation",
   "compatibility_date": "2026-02-27",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_flags": ["nodejs_compat"],
   "main": "./worker/index.ts",
   "assets": {
     "directory": "./dist/client",
     "not_found_handling": "none",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
   },
   "images": {
-    "binding": "IMAGES"
+    "binding": "IMAGES",
   },
   "r2_buckets": [
     {
       "binding": "WEBPAGES_BUCKET",
       "bucket_name": "webpages",
       "preview_bucket_name": "webpages",
-      "remote": true
-    }
+      "remote": true,
+    },
   ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "annotations",
       "database_id": "d0b49103-0e2d-472a-8c52-b323f5819d6e",
-      "remote": true
-    }
+      "remote": true,
+    },
   ],
   "observability": {
     "logs": {
       "enabled": true,
-      "invocation_logs": true
-    }
+      "invocation_logs": true,
+    },
   },
   // Default vars used by `wrangler dev`
   // Set BROWSER_WORKER_TOKEN via: wrangler secret put BROWSER_WORKER_TOKEN --env production
   "vars": {
     "BROWSER_WORKER_URL": "",
-    "BROWSER_WORKER_TOKEN": ""
+    "BROWSER_WORKER_TOKEN": "",
   },
-  "env": {
-    "production": {}
-  }
 }

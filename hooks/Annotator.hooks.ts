@@ -32,7 +32,7 @@ export function useClickHref(
         const base = (target.ownerDocument as Document | null)?.location?.href || window.location.href;
         const linkUrl = new URL(href, base);
 
-        // If same origin, let the browser handle it (includes all proxied /_proxy/ links)
+        // If same origin, let the browser handle it (includes all proxied /proxy/ links)
         if (linkUrl.origin === window.location.origin) return;
 
         // External link: notify by calling the callback

@@ -1,7 +1,7 @@
 // ─── Framed Page Proxy ───────────────────────────────────────────────────────
 //
 // Serves a fully-rewritten HTML page so it can be loaded inside a same-origin
-// <iframe>. Resource URLs are rewritten to /_proxy/{slug}/… so assets load
+// <iframe>. Resource URLs are rewritten to /proxy/{slug}/... so assets load
 // correctly. Scripts execute natively in the iframe's own window.
 //
 // Because the iframe shares our origin, the parent app has full
@@ -34,7 +34,7 @@ function absoluteUrl(base: string, relative: string): string {
 function proxiedUrl(slug: string, absolute: string): string {
   try {
     const u = new URL(absolute);
-    return `/_proxy/${slug}${u.pathname}${u.search}${u.hash}`;
+    return `/proxy/${slug}${u.pathname}${u.search}${u.hash}`;
   } catch { return absolute; }
 }
 
@@ -51,7 +51,7 @@ function isJsonOnly(text: string): boolean {
 /**
  * Content script injected into stored/pasted HTML.
  * Unlike the proxy variant, this one rewrites root-relative fetch()/XHR
- * directly to the original site origin rather than routing through _proxy.
+ * directly to the original site origin rather than routing through /proxy.
  * HTML-level attributes (src/href) are handled by a <base> tag instead.
  */
 function contentScriptDirect(origin: string): string {
@@ -256,7 +256,7 @@ export async function GET(
   });
 
   // Inject proxy:script-executed signals into inline scripts.
-  // External scripts get the signal appended by /_proxy/route.ts instead.
+  // External scripts get the signal appended by /proxy/route.ts instead.
   let scriptIndex = 0;
   $('script:not([src])').each((_, el) => {
     const type = $(el).attr('type') || '';
@@ -323,7 +323,7 @@ export async function GET(
 
   // ── 4. Previously we injected a runtime content script here to rewrite
   // root-relative URLs inside the iframe. That work is now handled by
-  // middleware which rewrites asset requests to /_proxy/{site}/… based on
+  // middleware which rewrites asset requests to /proxy/{site}/... based on
   // the iframe referer, so we no longer inject the runtime interceptor.
 
   // ── 5. Return ─────────────────────────────────────────────────────────

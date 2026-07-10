@@ -9,20 +9,20 @@ import {
 
 test('normalizes frame cache keys to absolute URLs without fragments', () => {
   assert.equal(
-    normalizeFrameUrl('/_frame/site/docs?q=1#selection', 'https://annotation.test/app'),
-    'https://annotation.test/_frame/site/docs?q=1',
+    normalizeFrameUrl('/frame/site/docs?q=1#selection', 'https://annotation.test/app'),
+    'https://annotation.test/frame/site/docs?q=1',
   );
 });
 
 test('uses a stable versioned cache name for each full frame URL', () => {
-  const url = 'https://annotation.test/_frame/site/docs?q=1';
-  assert.equal(stableFrameId(url), 'a5f6267c1dcd11f0');
+  const url = 'https://annotation.test/frame/site/docs?q=1';
+  assert.equal(stableFrameId(url), '20d3de5f4f7a5ec3');
   assert.equal(
-    frameCacheName('/_frame/site/docs?q=1', 'https://annotation.test/app'),
-    'annotation-frame-v1-a5f6267c1dcd11f0',
+    frameCacheName('/frame/site/docs?q=1', 'https://annotation.test/app'),
+    'annotation-frame-v1-20d3de5f4f7a5ec3',
   );
   assert.notEqual(
-    frameCacheName('/_frame/site/docs?q=1', 'https://annotation.test'),
-    frameCacheName('/_frame/site/docs?q=2', 'https://annotation.test'),
+    frameCacheName('/frame/site/docs?q=1', 'https://annotation.test'),
+    frameCacheName('/frame/site/docs?q=2', 'https://annotation.test'),
   );
 });

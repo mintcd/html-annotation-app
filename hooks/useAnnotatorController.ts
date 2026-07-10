@@ -60,7 +60,7 @@ export function useAnnotatorController({
   const title = livePage.data?.[0]?.title || discoveredTitle;
 
   const framePath = useMemo(() => {
-    const parts = iframeUrl.replace(/^\/+_frame\//, '').split('?')[0].split('/');
+    const parts = iframeUrl.replace(/^\/+frame\//, '').split('?')[0].split('/');
     return parts.slice(1).join('/');
   }, [iframeUrl]);
 
