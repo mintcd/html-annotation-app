@@ -33,11 +33,15 @@ type PromptState = {
 } | null;
 
 function annotationExcerpt(annotation: Annotation): string {
-  const source = annotation.text || annotation.html || "Untitled highlight";
+  const source = annotation.html || annotation.text || "Untitled highlight";
   const normalized = source.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   if (!normalized) return "Untitled highlight";
   if (normalized.length <= 180) return normalized;
   return `${normalized.slice(0, 177).trimEnd()}…`;
+}
+
+function annotationPreview(annotation: Annotation): string {
+  return annotation.html?.trim() || annotation.text || "Untitled highlight";
 }
 
 export default function AnnotationList({
@@ -141,6 +145,7 @@ export default function AnnotationList({
           {annotations.map((annotation) => {
             const isActive = hoveredId === annotation.id || activeAnnotationId === annotation.id;
             const excerpt = annotationExcerpt(annotation);
+            const preview = annotationPreview(annotation);
 
             if (mode === "compact") {
               return (
@@ -168,7 +173,7 @@ export default function AnnotationList({
                       <span style={styles.annotationCopy}>
                         <span style={styles.highlightLabel}>Highlight</span>
                         <span style={styles.excerpt}>
-                          <Latex>{excerpt}</Latex>
+                          <Latex>{preview}</Latex>
                         </span>
                         {annotation.comment && (
                           <span style={styles.comment}>

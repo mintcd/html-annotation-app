@@ -44,6 +44,7 @@ function createDefaultMacros(smallCapsClassName: string): LatexMacros {
     const letter = String.fromCharCode(code);
     macros[`\\${letter}${letter}`] = `\\mathbb{${letter}}`;
     macros[`\\${letter}`] = `\\mathcal{${letter}}`;
+    macros[`\\s${letter}`] = `\\mathcal{${letter}}`;
   }
 
   macros['\\sc#1'] = `\\require{html}\\htmlClass{${smallCapsClassName}}{\\text{#1}}`;
@@ -95,6 +96,9 @@ function escapeRegex(text: string): string {
 }
 
 const amsRegex = /^\\begin{/;
+const bareLatexCommandRegex = /\\[a-zA-Z]+/;
+const htmlTagRegex = /(<[^>]+>)/g;
+const bareLatexRegex = /(^|[\s([{,;:])((?:[A-Za-z0-9()[\]{}+\-*/^_=<>|]+\s+)?\\[A-Za-z]+(?:\{[^{}]*\})?(?:(?:\s*(?:[A-Za-z0-9()[\]{}+\-*/^_=<>|]+|\\[A-Za-z]+(?:\{[^{}]*\})?)))*)/g;
 
 function splitAtDelimiters(
   text: string,
@@ -146,34 +150,75 @@ function renderLatexInText(
 ): string {
   return splitAtDelimiters(text, delimiters)
     .map((fragment) => {
-      if (fragment.type === 'text') return fragment.data;
-
-      const containsSmallCaps = /\\sc\{[^}]*\}/.test(fragment.data);
-      const otherCommands = (fragment.data.match(/\\([a-zA-Z]+)/g) ?? [])
-        .map((command) => command.slice(1))
-        .filter((command) => command !== 'sc');
-
-      if (containsSmallCaps && otherCommands.length === 0) {
-        return fragment.data.replace(
-          /\\sc\{([^}]*)\}(\\\s*)?/g,
-          (_match, content: string, trailingSpace: string | undefined) => (
-            `<span class="${styles.smallCaps}">${escapeHtml(content)}${trailingSpace ? '~' : ''}</span>`
-          ),
-        );
+      if (fragment.type === 'text') {
+        return renderBareLatexInHtmlText(fragment.data, strict, macros);
       }
 
-      try {
-        return katex.renderToString(fragment.data, {
-          displayMode: fragment.display,
-          macros,
-          output: 'html',
-        });
-      } catch (error) {
-        if (strict) throw error;
-        return fragment.data;
-      }
+      return renderMathFragment(fragment.data, fragment.display, strict, macros);
     })
     .join('');
+}
+
+function renderBareLatexInHtmlText(
+  text: string,
+  strict: boolean,
+  macros: LatexMacros,
+): string {
+  if (!bareLatexCommandRegex.test(text)) return text;
+
+  return text
+    .split(htmlTagRegex)
+    .map((part) => {
+      if (!part || (part.startsWith('<') && part.endsWith('>'))) return part;
+      return renderBareLatexInPlainText(part, strict, macros);
+    })
+    .join('');
+}
+
+function renderBareLatexInPlainText(
+  text: string,
+  strict: boolean,
+  macros: LatexMacros,
+): string {
+  return text.replace(bareLatexRegex, (match, boundary: string, expression: string) => {
+    if (!bareLatexCommandRegex.test(expression)) return match;
+
+    const trimmed = expression.trimEnd();
+    const trailing = expression.slice(trimmed.length);
+    return `${boundary}${renderMathFragment(trimmed, false, strict, macros)}${trailing}`;
+  });
+}
+
+function renderMathFragment(
+  data: string,
+  display: boolean | undefined,
+  strict: boolean,
+  macros: LatexMacros,
+): string {
+  const containsSmallCaps = /\\sc\{[^}]*\}/.test(data);
+  const otherCommands = (data.match(/\\([a-zA-Z]+)/g) ?? [])
+    .map((command) => command.slice(1))
+    .filter((command) => command !== 'sc');
+
+  if (containsSmallCaps && otherCommands.length === 0) {
+    return data.replace(
+      /\\sc\{([^}]*)\}(\\\s*)?/g,
+      (_match, content: string, trailingSpace: string | undefined) => (
+        `<span class="${styles.smallCaps}">${escapeHtml(content)}${trailingSpace ? '~' : ''}</span>`
+      ),
+    );
+  }
+
+  try {
+    return katex.renderToString(data, {
+      displayMode: display,
+      macros,
+      output: 'html',
+    });
+  } catch (error) {
+    if (strict) throw error;
+    return data;
+  }
 }
 
 export function Latex({
