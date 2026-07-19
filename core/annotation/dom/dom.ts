@@ -3,7 +3,6 @@ import {
   createTextAnchorModel,
   findOccurrences,
   findTextAnchorMatch,
-  isTextAnchor,
   normalizeAnchorText,
   textAnchorsEqual,
 } from '../model/index.ts';
@@ -536,54 +535,6 @@ function anchorAt(index: TextIndex, start: number, end: number): TextAnchor {
   return createTextAnchorModel(index.text, start, end);
 }
 
-function isLegacyMathRepeat(fragment: string): boolean {
-  return /[\[\](){}=+*\/^_<>|\\]/u.test(fragment) || /^[A-Z]$/u.test(fragment);
-}
-
-function collapseAdjacentRepeatedFragments(value: string): {
-  text: string;
-  changed: boolean;
-} {
-  let text = '';
-  let changed = false;
-  let index = 0;
-
-  while (index < value.length) {
-    const maxLength = Math.min(80, Math.floor((value.length - index) / 2));
-    let repeated: { fragment: string; count: number } | null = null;
-
-    for (let length = 1; length <= maxLength; length++) {
-      const fragment = value.slice(index, index + length);
-      if (!fragment.trim()) continue;
-
-      let count = 1;
-      while (
-        index + (count + 1) * length <= value.length
-        && value.slice(index + count * length, index + (count + 1) * length) === fragment
-      ) {
-        count++;
-      }
-
-      if (count > 1 && isLegacyMathRepeat(fragment)) {
-        repeated = { fragment, count };
-        break;
-      }
-    }
-
-    if (!repeated) {
-      text += value[index];
-      index++;
-      continue;
-    }
-
-    text += repeated.fragment;
-    changed = true;
-    index += repeated.fragment.length * repeated.count;
-  }
-
-  return { text, changed };
-}
-
 export function createTextAnchor(
   root: HTMLElement,
   range: Range,
@@ -623,92 +574,34 @@ export function createTextAnchor(
 
 export function getRange(
   root: HTMLElement,
-  searchText: string,
-  rangePosition?: Annotation['position'],
+  position: TextAnchor,
   index: TextIndex = createTextIndex(root),
 ): {
   range: Range;
-  usedPosition: boolean;
   resolvedPosition?: TextAnchor;
 } {
-  const exact = normalizeAnchorText(searchText);
-  if (!exact) throw new Error('Search text must be non-empty');
+  const exact = normalizeAnchorText(position.exact);
+  if (!exact) throw new Error('Annotation anchor must quote non-empty text');
 
-  if (rangePosition && isTextAnchor(rangePosition)) {
-    // The displayed annotation text may come from Range#toString(), which
-    // included MathJax's visual, assistive, and script representations in old
-    // annotations. The anchor exact is the canonical one-representation quote.
-    const anchorExact = normalizeAnchorText(rangePosition.exact);
-    const start = findTextAnchorMatch(index.text, anchorExact, rangePosition);
-    if (start !== null) {
-      const end = start + anchorExact.length;
-      const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
-      if (range) {
-        const resolvedPosition = anchorAt(index, start, end);
-        const unchanged = textAnchorsEqual(rangePosition, resolvedPosition);
-        return {
-          range,
-          usedPosition: unchanged,
-          resolvedPosition: unchanged ? undefined : resolvedPosition,
-        };
-      }
-    }
-  }
-
-  const start = findTextAnchorMatch(index.text, exact);
+  const start = findTextAnchorMatch(index.text, exact, position);
   if (start !== null) {
     const end = start + exact.length;
     const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
     if (!range) throw new Error('Unable to reconstruct annotation range');
-    return { range, usedPosition: false, resolvedPosition: anchorAt(index, start, end) };
-  }
-
-  const collapsedLegacyExact = collapseAdjacentRepeatedFragments(exact);
-  if (collapsedLegacyExact.changed) {
-    const repairedStart = findTextAnchorMatch(index.text, collapsedLegacyExact.text);
-    if (repairedStart !== null) {
-      const repairedEnd = repairedStart + collapsedLegacyExact.text.length;
-      const range = rangeFromCharacters(root.ownerDocument, index.characters, repairedStart, repairedEnd);
-      if (!range) throw new Error('Unable to reconstruct annotation range');
-      return {
-        range,
-        usedPosition: false,
-        resolvedPosition: anchorAt(index, repairedStart, repairedEnd),
-      };
-    }
+    const resolvedPosition = anchorAt(index, start, end);
+    return {
+      range,
+      resolvedPosition: textAnchorsEqual(position, resolvedPosition)
+        ? undefined
+        : resolvedPosition,
+    };
   }
 
   const occurrences = Math.max(
     findOccurrences(index.text, exact).length,
   );
   if (occurrences > 1) throw new Error(`Annotation text is ambiguous (${occurrences} matches)`);
-  throw new Error(`${searchText} not found in document`);
-}
-
-export function getRangeByText(root: HTMLElement, searchText: string): {
-  range: Range;
-  startPosition: number;
-  endPosition: number;
-  startOffset: number;
-  endOffset: number;
-} {
-  const index = createTextIndex(root);
-  const exact = normalizeAnchorText(searchText);
-  const start = findTextAnchorMatch(index.text, exact);
-  if (start === null) throw new Error('Text not found or is ambiguous');
-
-  const end = start + exact.length;
-  const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
-  if (!range) throw new Error('Unable to reconstruct annotation range');
-  const first = index.characters[start];
-  const last = index.characters[end - 1];
-  return {
-    range,
-    startPosition: start,
-    endPosition: end - 1,
-    startOffset: first.startOffset,
-    endOffset: last.endOffset,
-  };
+  throw new Error(`${position.exact} not found in document`);
 }
 
 export function highlightRange(range: Range, color: string = "#ffff00", id?: string): string {

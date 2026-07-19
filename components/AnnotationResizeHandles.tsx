@@ -273,7 +273,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     const annotation = annotationsRef.current.find(({ id }) => id === annotationId);
     if (!annotation) return null;
     try {
-      return getRange(root, annotation.text, annotation.position).range;
+      return getRange(root, annotation.position).range;
     } catch {
       return null;
     }
@@ -389,7 +389,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       const index = createTextIndex(root);
       const candidatePosition = createTextAnchor(root, candidate, index);
       if (candidatePosition) {
-        const canonical = getRange(root, candidatePosition.exact, candidatePosition, index);
+        const canonical = getRange(root, candidatePosition, index);
         position = canonical.resolvedPosition ?? candidatePosition;
       }
       const highlighted = getHighlightRange(root.ownerDocument, annotationId);
@@ -408,7 +408,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     let html: string;
     let updatedRange: Range | null;
     try {
-      const reconstructed = getRange(root, position.exact, position);
+      const reconstructed = getRange(root, position);
       const cleanRange = reconstructed.range;
       position = reconstructed.resolvedPosition ?? position;
       html = cleanedHtml(rangeToHtml(cleanRange)).html;
@@ -421,7 +421,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       removeHighlights(root, annotationId);
       if (previousPosition) {
         try {
-          const rollback = getRange(root, previousPosition.exact, previousPosition).range;
+          const rollback = getRange(root, previousPosition).range;
           highlightRange(rollback, annotation.color, annotationId);
         } catch {
           // There is no safe DOM rollback left; persistence is intentionally
@@ -468,11 +468,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
         if (!sameAnchor(latestPosition, savedPosition)) return;
 
         removeHighlights(latestRoot, annotationId);
-        const restored = getRange(
-          latestRoot,
-          previousPosition.exact,
-          previousPosition,
-        ).range;
+        const restored = getRange(latestRoot, previousPosition).range;
         const latestAnnotation = annotationsRef.current.find(({ id }) => id === annotationId);
         highlightRange(restored, latestAnnotation?.color ?? annotation.color, annotationId);
         annotationsRef.current = annotationsRef.current.map((item) => item.id === annotationId
@@ -480,14 +476,14 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
             ...item,
             text: annotation.text,
             html: annotation.html,
-            position: annotation.position ?? previousPosition,
+            position: annotation.position,
           }
           : item);
         void updateAnnotation({
           id: annotationId,
           text: annotation.text,
           html: annotation.html ?? null,
-          position: annotation.position ?? previousPosition,
+          position: annotation.position,
         });
         if (mountedRef.current) {
           scheduleMeasure();

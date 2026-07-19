@@ -134,10 +134,15 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
     const { html } = cleanedHtml(rangeToHtml(range));
     // Capture a durable anchor before highlightRange splits and wraps text
     // nodes. This makes the first reload use the fast position path.
-    const position = createTextAnchor(contentRoot, range) ?? undefined;
+    const position = createTextAnchor(contentRoot, range);
+    if (!position) {
+      updateRange(null);
+      return;
+    }
+
     // Range#toString() can include MathJax's visual, assistive, and TeX source
-    // text. Prefer the anchor's canonical, single-representation quote.
-    const text = position?.exact ?? range.toString();
+    // text. Use the anchor's canonical, single-representation quote.
+    const text = position.exact;
 
     const iframeDoc = session.document;
     const startEl =

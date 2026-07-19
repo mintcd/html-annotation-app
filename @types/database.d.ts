@@ -15,13 +15,6 @@ type Page = {
   updated_at: string;
 }
 
-type LegacyAnnotationPosition = {
-  startPosition: number;
-  endPosition: number;
-  startOffset: number;
-  endOffset: number;
-};
-
 type TextAnchor = {
   version: 1;
   start: number;
@@ -31,14 +24,12 @@ type TextAnchor = {
   suffix: string;
 };
 
-type AnnotationPosition = LegacyAnnotationPosition | TextAnchor;
-
 type Annotation = {
   id: string;
   page_id: string;
   text: string;
   html?: string | null;
-  position?: AnnotationPosition;
+  position: TextAnchor;
   color: string;
   comment?: string | null;
   created_at: string;

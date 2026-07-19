@@ -44,15 +44,14 @@ export async function applyAnnotationHighlights(
   const prepared: Array<{
     ann: Annotation;
     range: Range;
-    usedPosition: boolean;
     resolvedPosition?: TextAnchor;
   }> = [];
   const failed: AnnotationHighlightFailure[] = [];
 
   for (const ann of annotations) {
     try {
-      const result = getRange(root, ann.text, ann.position, textIndex);
-      prepared.push({ ann, range: result.range, usedPosition: result.usedPosition, resolvedPosition: result.resolvedPosition });
+      const result = getRange(root, ann.position, textIndex);
+      prepared.push({ ann, range: result.range, resolvedPosition: result.resolvedPosition });
     } catch (error) {
       if (logFailures) console.warn('Failed to match annotation:', ann.id, error);
       failed.push({ annotation: ann, error });
@@ -74,7 +73,7 @@ export async function applyAnnotationHighlights(
 
   const anchorRepairs = highlighted.filter(
     (item): item is typeof item & { resolvedPosition: TextAnchor } =>
-      !item.usedPosition && item.resolvedPosition !== undefined,
+      item.resolvedPosition !== undefined,
   );
 
   if (anchorRepairs.length > 0) {

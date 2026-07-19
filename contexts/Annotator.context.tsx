@@ -22,15 +22,13 @@ import {
   updatePageRow,
 } from "../core/persistence";
 
-type AnnotationPosition = NonNullable<Annotation['position']>;
-
 type AnnotationUpdate = {
   id: string;
   comment?: string;
   color?: string;
   text?: string;
   html?: string | null;
-  position?: AnnotationPosition;
+  position?: TextAnchor;
 };
 
 type AnnotationContextProps = {
@@ -48,7 +46,7 @@ type AnnotationContextType = {
   title?: string;
   currentHighlightColor: string;
   setCurrentHighlightColor: React.Dispatch<React.SetStateAction<string>>;
-  addAnnotation: (payload: { text: string; html: string; color: string; position?: AnnotationPosition }) => Promise<{ tempId: string; promise: Promise<string> }>;
+  addAnnotation: (payload: { text: string; html: string; color: string; position: TextAnchor }) => Promise<{ tempId: string; promise: Promise<string> }>;
   deleteAnnotation: (id: string) => void;
   updateAnnotation: (params: AnnotationUpdate) => Promise<boolean>;
   syncStatus: 'synced' | 'syncing' | 'pending';
@@ -133,7 +131,7 @@ export function AnnotationContext({
     root: initialMatchingComplete ? session.root : null,
   }), [initialMatchingComplete, session]);
 
-  const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position?: AnnotationPosition }): Promise<{ tempId: string; promise: Promise<string> }> => {
+  const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position: TextAnchor }): Promise<{ tempId: string; promise: Promise<string> }> => {
     const { text, html, color, position } = payload;
     const tempId = crypto.randomUUID();
     const now = syncTimestamp();
@@ -171,7 +169,7 @@ export function AnnotationContext({
           comment: null,
           created_at: now,
           updated_at: now,
-          position: position ?? null,
+          position,
         }, runtime);
         const insertedId = inserted.id;
 
@@ -224,9 +222,7 @@ export function AnnotationContext({
       if (html !== undefined) updated.html = html;
       if (position !== undefined) {
         updated.position = position;
-        if ('version' in position && position.version === 1) {
-          updated.text = position.exact;
-        }
+        updated.text = position.exact;
       }
       return updated;
     }));

@@ -170,7 +170,7 @@ class FakeDocument {
   }
 }
 
-function mathJaxFixture(): { root: HTMLElement; canonical: string; legacy: string } {
+function mathJaxFixture(): { root: HTMLElement; canonical: string } {
   const document = new FakeDocument();
   const root = new FakeElement(document, 'p');
   const beforeA = 'In a system of set theory with atoms it is assumed that one is given an infinite set ';
@@ -200,7 +200,6 @@ function mathJaxFixture(): { root: HTMLElement; canonical: string; legacy: strin
   return {
     root: root as unknown as HTMLElement,
     canonical: `${beforeA}A${between}V(A)${after}`,
-    legacy: `${beforeA}AAA${between}V(A)V(A)V(A)${after}`,
   };
 }
 
@@ -283,23 +282,26 @@ test('indexes rendered MathJax once while excluding assistive and source copies'
   assert.equal(createTextIndex(root).text, canonical);
 });
 
-test('repairs annotations whose MathJax text was saved three times', () => {
-  const { root, canonical, legacy } = mathJaxFixture();
+test('resolves a canonical MathJax text anchor', () => {
+  const { root, canonical } = mathJaxFixture();
   const index = createTextIndex(root);
-  const result = getRange(root, legacy, undefined, index);
+  const result = getRange(root, anchorFor(canonical, canonical, 0), index);
 
-  assert.equal(result.usedPosition, false);
-  assert.equal(result.resolvedPosition?.exact, canonical);
+  assert.equal(result.resolvedPosition, undefined);
   assert.equal(result.range.startOffset, 0);
   assert.equal(result.range.endOffset, ' of sets over A.'.length);
 });
 
-test('uses a canonical anchor exact when the saved display quote is legacy MathJax text', () => {
-  const { root, canonical, legacy } = mathJaxFixture();
+test('relocates a canonical MathJax text anchor after surrounding text changes', () => {
+  const { root, canonical } = mathJaxFixture();
+  const fakeRoot = root as unknown as FakeElement;
+  fakeRoot.children.unshift(new FakeText('Inserted context. ', fakeRoot));
   const index = createTextIndex(root);
   const anchor = anchorFor(canonical, canonical, 0);
-  const result = getRange(root, legacy, anchor, index);
+  const result = getRange(root, anchor, index);
 
-  assert.equal(result.usedPosition, true);
-  assert.equal(result.resolvedPosition, undefined);
+  assert.equal(result.resolvedPosition?.exact, canonical);
+  assert.equal(result.resolvedPosition?.start, 'Inserted context. '.length);
+  assert.equal(result.range.startOffset, 0);
+  assert.equal(result.range.endOffset, ' of sets over A.'.length);
 });

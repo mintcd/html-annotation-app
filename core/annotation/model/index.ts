@@ -84,6 +84,11 @@ export function textAnchorsEqual(left: TextAnchor, right: TextAnchor): boolean {
     && left.suffix === right.suffix;
 }
 
-export function isTextAnchor(position: AnnotationPosition): position is TextAnchor {
-  return 'version' in position && position.version === 1;
+export function isTextAnchor(position: unknown): position is TextAnchor {
+  return Boolean(
+    position
+    && typeof position === 'object'
+    && 'version' in position
+    && position.version === 1,
+  );
 }

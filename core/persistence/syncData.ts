@@ -21,7 +21,7 @@ type AnnotationInput = {
   comment?: string | null;
   created_at: string;
   updated_at: string;
-  position?: Annotation['position'] | null;
+  position: TextAnchor;
 };
 
 type AnnotationPatch = {
@@ -30,7 +30,7 @@ type AnnotationPatch = {
   color?: string;
   comment?: string | null;
   updated_at?: string;
-  position?: Annotation['position'] | null;
+  position?: TextAnchor | null;
 };
 
 type SyncFlushMode = 'background' | 'await' | 'none';
@@ -229,19 +229,19 @@ export function normalizeAnnotationRow(row: Record<string, unknown>): Annotation
   const exact = stringValue(row.exact ?? row.text);
   const prefix = stringValue(row.prefix);
   const suffix = stringValue(row.suffix);
+  const position = normalizeTextAnchor(row.position)
+    ?? { version: 1, start: 0, end: exact.length, exact, prefix, suffix };
 
   return {
     id: String(row.id ?? ''),
     page_id: String(row.page_id ?? ''),
-    text: exact,
+    text: position.exact,
     html: typeof row.html === 'string' ? row.html : null,
     color: typeof row.color === 'string' ? row.color : '#87ceeb',
     comment: typeof row.comment === 'string' ? row.comment : null,
     created_at: String(row.created_at ?? ''),
     updated_at: String(row.updated_at ?? ''),
-    position: exact
-      ? { version: 1, start: 0, end: exact.length, exact, prefix, suffix }
-      : normalizePosition(row.position),
+    position,
   };
 }
 
@@ -269,9 +269,9 @@ function buildAnnotationRow(input: AnnotationInput): AnnotationRow {
 function annotationAnchorFields(
   current: Pick<AnnotationRow, 'exact' | 'prefix' | 'suffix'> | undefined,
   text: string | undefined,
-  position: Annotation['position'] | null | undefined,
+  position: TextAnchor | null | undefined,
 ): Pick<AnnotationRow, 'exact' | 'prefix' | 'suffix'> {
-  if (position && isTextAnchor(position)) {
+  if (position) {
     return {
       exact: position.exact,
       prefix: position.prefix,
@@ -374,7 +374,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function normalizePosition(value: unknown): Annotation['position'] {
+function normalizeTextAnchor(value: unknown): TextAnchor | undefined {
   let position = value;
   if (typeof position === 'string') {
     try {
@@ -384,44 +384,14 @@ function normalizePosition(value: unknown): Annotation['position'] {
     }
   }
 
-  if (Array.isArray(position)) {
-    const [startPosition, endPosition, startOffset, endOffset] = position;
-    return toPosition(startPosition, endPosition, startOffset, endOffset);
-  }
-
   if (position && typeof position === 'object') {
     const record = position as Record<string, unknown>;
     if (Number(record.version) === 1) {
       return toTextAnchor(record);
     }
-    return toPosition(
-      record.startPosition ?? record.start_pos ?? record[0],
-      record.endPosition ?? record.end_pos ?? record[1],
-      record.startOffset ?? record.start_offset ?? record[2],
-      record.endOffset ?? record.end_offset ?? record[3],
-    );
   }
 
   return undefined;
-}
-
-function toPosition(
-  startPosition: unknown,
-  endPosition: unknown,
-  startOffset: unknown,
-  endOffset: unknown,
-): Annotation['position'] {
-  const values = [startPosition, endPosition, startOffset, endOffset].map(Number);
-  if (
-    values.some((value) => !Number.isInteger(value) || value < 0)
-    || values[1] < values[0]
-  ) return undefined;
-  return {
-    startPosition: values[0],
-    endPosition: values[1],
-    startOffset: values[2],
-    endOffset: values[3],
-  };
 }
 
 function toTextAnchor(record: Record<string, unknown>): TextAnchor | undefined {
@@ -441,15 +411,6 @@ function toTextAnchor(record: Record<string, unknown>): TextAnchor | undefined {
   ) return undefined;
 
   return { version: 1, start, end, exact, prefix, suffix };
-}
-
-function isTextAnchor(
-  position: Annotation['position'] | null | undefined,
-): position is TextAnchor {
-  if (!position || typeof position !== 'object' || !('version' in position)) {
-    return false;
-  }
-  return position.version === 1;
 }
 
 function siteIdForOrigin(origin: string): string {

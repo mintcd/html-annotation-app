@@ -4,7 +4,6 @@ export {
   createTextIndex,
   findBestContentNode,
   getRange,
-  getRangeByText,
   highlightRange,
   rangeToHtml,
   removeHighlights,
