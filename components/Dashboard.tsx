@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiArrowRight,
@@ -1305,7 +1305,7 @@ function AuthDashboard({ sync }: { sync: DashboardSync }) {
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+  async function submitAuth(event: ChangeEvent) {
     event.preventDefault();
     setSubmitting(true);
     setAuthError(null);
@@ -1691,7 +1691,7 @@ function AuthenticatedDashboard() {
     }
   }
 
-  const handleAnnotateSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleAnnotateSubmit = (event: ChangeEvent<HTMLFormElement>) => {
     event.preventDefault();
     void saveAndNavigateToPage(enterUrl);
   };

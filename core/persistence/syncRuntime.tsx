@@ -131,7 +131,7 @@ export function SyncEngineProvider({ children }: { children: ReactNode }) {
     streamId: session.streamId,
     clientId,
     credentials: "same-origin",
-    initialSync: false,
+    initialSync: true,
     serviceWorker: {
       syncOnBackgroundMessage: false,
       syncOnMutation: false,
