@@ -3,18 +3,24 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAnnotationContext } from "../contexts/Annotator.context";
-import { refreshFrameBundle } from '@/utils/frameCache';
 import { useMobile, useHotkey, useClickOutside } from "../hooks";
 import { useResizablePanelWidth } from "../hooks/AnnotationsPanel.hooks";
 import AnnotationList from "./AnnotationList";
-import { sortOptions } from "../utils/annotations";
-import type { SortOption } from "../utils/annotations";
 import { BoxList, Sort, PasteHtml, Refresh, Times } from "../app/icons";
-import { Badge } from "../design-system/badge";
-import { IconButton } from "../design-system/icon-button";
+import { Badge } from "./design-system/badge";
+import { IconButton } from "./design-system/icon-button";
 import Dropdown from "./Dropdown";
-import { escapeAttrValue } from "../utils/string";
-import styles from "../styles/AnnotationsPanel.styles";
+import styles from "./styles/AnnotationsPanel.styles";
+
+type SortOption = 'created-asc' | 'created-desc' | 'modified-asc' | 'modified-desc' | 'dom-order';
+
+const sortOptions = [
+  { value: 'dom-order' as SortOption, label: 'Page Order' },
+  { value: 'created-desc' as SortOption, label: 'Newest First' },
+  { value: 'created-asc' as SortOption, label: 'Oldest First' },
+  { value: 'modified-desc' as SortOption, label: 'Recently Modified' },
+  { value: 'modified-asc' as SortOption, label: 'Least Recently Modified' },
+];
 
 type SidebarProps = {
   onPasteHtml?: () => void;
@@ -27,7 +33,7 @@ export default function AnnotationsPanel({
   open: controlledOpen,
   onOpenChange,
 }: SidebarProps) {
-  const { annotations, syncStatus, contentRef, iframeRef, pageUrl, title, iframeUrl } = useAnnotationContext();
+  const { annotations, syncStatus, session, pageUrl, title } = useAnnotationContext();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('dom-order');
   const items = useMemo(() => {
@@ -80,19 +86,9 @@ export default function AnnotationsPanel({
   }, [pageUrl, title]);
 
   const scrollToAnnotation = useCallback((id: string) => {
-    const escaped = escapeAttrValue(id);
     if (isMobile) setPanelOpen(false);
-
-    if (!contentRef?.current) return;
-
-    try {
-      const spans = contentRef.current.querySelectorAll<HTMLSpanElement>(`[data-highlight-id="${escaped}"]`);
-      const span = spans[0] ?? null;
-      if (span) span.scrollIntoView({ behavior: "instant", block: "center" });
-    } catch (e) {
-      // ignore
-    }
-  }, [isMobile, contentRef, setPanelOpen]);
+    session.scrollToHighlight(id);
+  }, [isMobile, session, setPanelOpen]);
 
   // Resizing functionality
   const handleRef = useRef<HTMLDivElement>(null);
@@ -119,12 +115,12 @@ export default function AnnotationsPanel({
     if (!open) return;
     const handleBlur = () => {
       window.setTimeout(() => {
-        if (document.activeElement === iframeRef.current) setPanelOpen(false);
+        if (document.activeElement === session.frame) setPanelOpen(false);
       }, 0);
     };
     window.addEventListener('blur', handleBlur);
     return () => window.removeEventListener('blur', handleBlur);
-  }, [iframeRef, open, setPanelOpen]);
+  }, [open, session.frame, setPanelOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -146,9 +142,7 @@ export default function AnnotationsPanel({
   const refreshResources = useCallback(async () => {
     try {
       setIsRefreshing(true);
-      const iframe = iframeRef.current;
-      if (!iframe || !iframeUrl) throw new Error('The page frame is not ready.');
-      await refreshFrameBundle(iframeUrl, iframe);
+      await session.reloadFrame();
     } catch (error) {
       console.error('Refresh failed', error);
       const detail = error instanceof Error ? error.message : 'Unknown error';
@@ -156,7 +150,7 @@ export default function AnnotationsPanel({
     } finally {
       setIsRefreshing(false);
     }
-  }, [iframeRef, iframeUrl]);
+  }, [session]);
 
   const syncLabel = syncStatus === 'syncing'
     ? 'Syncing'

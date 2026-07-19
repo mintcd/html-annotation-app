@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useMobile } from ".";
-import { cleanedHtml, createTextAnchor, highlightRange, rangeToHtml } from "../utils/dom";
+import { cleanedHtml, createTextAnchor, highlightRange, rangeToHtml } from "../core/annotation/dom";
 import { useAnnotationContext } from "../contexts/Annotator.context";
 import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.context";
 
@@ -25,10 +25,14 @@ function useDebouncedCallback<T extends (...args: unknown[]) => void>(fn: T, del
   }, [delay]);
 }
 
+function rangeInsideRoot(range: Range, root: HTMLElement): boolean {
+  return root.contains(range.startContainer) && root.contains(range.endContainer);
+}
+
 export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | null>) {
   const [range, setRange] = useState<Range | null>(null);
   const { isMobile } = useMobile();
-  const { contentRef, iframeRef, iframeReady, addAnnotation, currentHighlightColor } = useAnnotationContext();
+  const { session, addAnnotation, currentHighlightColor } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
 
   const updateRange = useCallback((nextRange: Range | null) => {
@@ -42,13 +46,13 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
     : range;
 
   const finalizeFromSelection = useCallback(() => {
-    const iframeDoc = iframeRef.current?.contentDocument;
+    const iframeDoc = session.document;
     if (
       overlay?.contextual.type === 'resize'
       || iframeDoc?.documentElement.dataset.annotationResizeId
     ) return;
 
-    const iframeWin = iframeRef.current?.contentWindow;
+    const iframeWin = session.frame?.contentWindow;
     const sel = iframeWin?.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
       updateRange(null);
@@ -56,38 +60,36 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
     }
 
     const r = sel.getRangeAt(0).cloneRange();
-    if (!iframeDoc) {
-      console.log("No iframe document found for selection");
+    const contentRoot = session.root;
+    if (!iframeDoc || !contentRoot) {
+      console.log("No iframe document or content root found for selection");
+      updateRange(null);
       return
     };
 
-    const root = r.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
-      ? (r.commonAncestorContainer as Element)
-      : r.commonAncestorContainer.parentElement;
-
-    if (!(root && iframeDoc.contains(root))) {
+    if (!rangeInsideRoot(r, contentRoot)) {
       updateRange(null);
       return;
     }
 
     updateRange(r);
-  }, [iframeRef, overlay?.contextual.type, updateRange]);
+  }, [session.document, session.frame, session.root, overlay?.contextual.type, updateRange]);
 
   // Debounced fallback used for selection handle drags on mobile
   const debouncedFinalize = useDebouncedCallback(finalizeFromSelection as (...args: unknown[]) => void, 100);
 
   // While selection is changing, hide the menu immediately
   const handleSelectionChanging = useCallback(() => {
-    const iframeDoc = iframeRef.current?.contentDocument;
+    const iframeDoc = session.document;
     if (
       overlay?.contextual.type === 'resize'
       || iframeDoc?.documentElement.dataset.annotationResizeId
     ) return;
     updateRange(null);
-  }, [iframeRef, overlay?.contextual.type, updateRange]);
+  }, [session.document, overlay?.contextual.type, updateRange]);
 
   const handlePointerUp = useCallback(() => {
-    finalizeFromSelection();
+    window.requestAnimationFrame(finalizeFromSelection);
   }, [finalizeFromSelection]);
 
   const handlePointerDown = useCallback((e: PointerEvent) => {
@@ -99,45 +101,45 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
   }, [menuRef, updateRange]);
 
   useEffect(() => {
-    if (!iframeReady) return;
-    const iDoc = iframeRef.current?.contentDocument;
+    if (!session.ready) return;
+    const iDoc = session.document;
     if (!iDoc) return;
 
     iDoc.addEventListener('pointerdown', handlePointerDown as EventListener, { capture: true });
+    iDoc.addEventListener('pointerup', handlePointerUp as EventListener, { capture: true });
     if (isMobile) {
       iDoc.addEventListener('selectionchange', debouncedFinalize);
       iDoc.addEventListener('selectionchange', handleSelectionChanging);
-    } else {
-      iDoc.addEventListener('pointerup', handlePointerUp as EventListener, { capture: true });
     }
 
     return () => {
       iDoc.removeEventListener('pointerdown', handlePointerDown as EventListener, { capture: true });
+      iDoc.removeEventListener('pointerup', handlePointerUp as EventListener, { capture: true });
       if (isMobile) {
         iDoc.removeEventListener('selectionchange', debouncedFinalize);
         iDoc.removeEventListener('selectionchange', handleSelectionChanging);
-      } else {
-        iDoc.removeEventListener('pointerup', handlePointerUp as EventListener, { capture: true });
       }
     };
-  }, [iframeReady, iframeRef, isMobile, handlePointerUp, handlePointerDown, debouncedFinalize, handleSelectionChanging]);
+  }, [session.document, session.ready, isMobile, handlePointerUp, handlePointerDown, debouncedFinalize, handleSelectionChanging]);
 
 
   async function createHighlight() {
     if (!range) return;
+    const contentRoot = session.root;
+    if (!contentRoot || !rangeInsideRoot(range, contentRoot)) {
+      updateRange(null);
+      return;
+    }
 
     const { html } = cleanedHtml(rangeToHtml(range));
     // Capture a durable anchor before highlightRange splits and wraps text
     // nodes. This makes the first reload use the fast position path.
-    const position = contentRef.current
-      ? createTextAnchor(contentRef.current, range) ?? undefined
-      : undefined;
+    const position = createTextAnchor(contentRoot, range) ?? undefined;
     // Range#toString() can include MathJax's visual, assistive, and TeX source
     // text. Prefer the anchor's canonical, single-representation quote.
     const text = position?.exact ?? range.toString();
 
-    const container = iframeRef.current;
-    const iframeDoc = container?.contentDocument;
+    const iframeDoc = session.document;
     const startEl =
       range.startContainer.nodeType === Node.ELEMENT_NODE
         ? (range.startContainer as Element)
@@ -151,7 +153,7 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
     }
 
     // Hide the live selection to avoid flicker while mutating DOM
-    const iframeWin = iframeRef.current?.contentWindow;
+    const iframeWin = session.frame?.contentWindow;
     const sel = (iframeWin ?? window).getSelection();
     if (sel) sel.removeAllRanges();
     // Create annotation and get temp ID immediately

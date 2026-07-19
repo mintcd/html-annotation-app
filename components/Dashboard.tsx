@@ -2,7 +2,6 @@
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
-import { eq, useLiveQuery, useSyncStatus } from '@mintcd/sync-engine';
 import {
   FiArrowRight,
   FiChevronDown,
@@ -13,18 +12,36 @@ import {
   FiFolder,
   FiGlobe,
   FiLayers,
+  FiLock,
+  FiLogIn,
+  FiLogOut,
   FiMenu,
   FiSearch,
   FiTrash2,
+  FiUser,
+  FiUserPlus,
   FiX,
 } from 'react-icons/fi';
-import { db } from '../utils/engine';
 import { useMobile } from "../hooks";
 import ActionDialog from './ActionDialog';
 import AnnotationList from './AnnotationList';
-import { normalizeUrl } from '../utils/url';
-import { ensurePage, getOrCreateWebsite, normalizeAnnotationRow, syncTimestamp } from '../utils/syncData';
-import { deleteFrameBundle } from '../utils/frameCache';
+import { normalizeUrl } from '../core/utils/url';
+import {
+  deleteAnnotationRow,
+  deletePageRow,
+  ensurePage,
+  ensureWebsiteAvailableForRoute,
+  findWebsiteByOrigin,
+  getOrCreateWebsite,
+  normalizeAnnotationRow,
+  syncTimestamp,
+  updateAnnotationRow,
+  type AppSyncRuntime,
+  useSyncRows,
+  useSyncRuntime,
+  useSyncStatus,
+} from '../core/persistence';
+import { deleteFrameBundle } from '../core/frame/cache';
 
 
 interface AnnotationPage {
@@ -54,12 +71,16 @@ function toAbsoluteUrl(rawUrl: string): string | null {
   }
 }
 
-async function navigateToPage(rawUrl: string): Promise<void> {
+async function navigateToPage(
+  rawUrl: string,
+  runtime: AppSyncRuntime,
+): Promise<void> {
   const absoluteUrl = toAbsoluteUrl(rawUrl);
   if (!absoluteUrl) throw new Error('Please enter a valid URL');
 
   const u = new URL(absoluteUrl);
-  const website = await getOrCreateWebsite(u.origin);
+  const website = await getOrCreateWebsite(u.origin, runtime);
+  await ensureWebsiteAvailableForRoute(website);
   window.location.href = `/${website.id}${u.pathname}${u.search}${u.hash}`;
 }
 
@@ -119,6 +140,154 @@ const dashboardCss = String.raw`
   .dashboard-shell button,
   .dashboard-shell input {
     font: inherit;
+  }
+
+  .dashboard-auth-shell {
+    align-items: center;
+    justify-content: center;
+    padding: clamp(1rem, 4vw, 3rem);
+  }
+
+  .dashboard-auth-main {
+    width: min(100%, 25rem);
+    margin: auto;
+  }
+
+  .dashboard-auth-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+    padding: 1.15rem;
+    border: 1px solid rgba(31, 35, 48, 0.08);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 20px 60px rgba(41, 45, 66, 0.12);
+    backdrop-filter: blur(18px);
+  }
+
+  .dashboard-auth-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .dashboard-auth-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 760;
+  }
+
+  .dashboard-auth-subtitle {
+    margin: 0.12rem 0 0;
+    color: var(--dash-muted);
+    font-size: 0.74rem;
+    font-weight: 560;
+  }
+
+  .dashboard-auth-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid #ececf2;
+    border-radius: 0.5rem;
+    background: #f7f8fb;
+  }
+
+  .dashboard-auth-tab {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 2.2rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    border: 0;
+    border-radius: 0.38rem;
+    color: #6f7585;
+    background: transparent;
+    font-size: 0.75rem;
+    font-weight: 720;
+    cursor: pointer;
+    transition: 150ms ease;
+  }
+
+  .dashboard-auth-tab.is-selected {
+    color: var(--dash-primary);
+    background: white;
+    box-shadow: 0 1px 6px rgba(31, 35, 48, 0.08);
+  }
+
+  .dashboard-auth-tab svg {
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .dashboard-auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .dashboard-auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .dashboard-auth-field span {
+    color: #3d4352;
+    font-size: 0.72rem;
+    font-weight: 720;
+  }
+
+  .dashboard-auth-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.75rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--dash-line);
+    border-radius: 0.5rem;
+    color: #8b91a0;
+    background: #fafafe;
+    transition: 150ms ease;
+  }
+
+  .dashboard-auth-input-row:focus-within {
+    border-color: rgba(37, 99, 235, 0.52);
+    color: var(--dash-primary);
+    background: white;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+  }
+
+  .dashboard-auth-input-row svg {
+    width: 0.95rem;
+    height: 0.95rem;
+    flex: 0 0 auto;
+  }
+
+  .dashboard-auth-input-row .dashboard-input {
+    padding: 0.65rem 0;
+    font-size: 0.82rem;
+  }
+
+  .dashboard-auth-error {
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid #f1cbd2;
+    border-radius: 0.5rem;
+    color: #8f2f40;
+    background: #fff4f6;
+    font-size: 0.74rem;
+    line-height: 1.45;
+  }
+
+  .dashboard-auth-status {
+    margin: 0;
+    color: var(--dash-muted);
+    font-size: 0.78rem;
   }
 
   .dashboard-sidebar {
@@ -235,6 +404,8 @@ const dashboardCss = String.raw`
   }
 
   .dashboard-icon-button:focus-visible,
+  .dashboard-auth-tab:focus-visible,
+  .dashboard-sign-out:focus-visible,
   .dashboard-folder-button:focus-visible,
   .dashboard-page-button:focus-visible,
   .dashboard-button:focus-visible,
@@ -562,6 +733,7 @@ const dashboardCss = String.raw`
   .dashboard-sync {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.48rem;
     margin: 0 1.25rem 1rem;
     padding: 0.65rem 0.75rem;
@@ -571,6 +743,34 @@ const dashboardCss = String.raw`
     background: #fafafe;
     font-size: 0.68rem;
     font-weight: 600;
+  }
+
+  .dashboard-sync-state {
+    display: inline-flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 0.48rem;
+  }
+
+  .dashboard-sync-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+  }
+
+  .dashboard-sync-label,
+  .dashboard-account-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-account-label {
+    color: #9aa0ad;
+    font-size: 0.62rem;
+    font-weight: 640;
   }
 
   .dashboard-sync-dot {
@@ -590,6 +790,47 @@ const dashboardCss = String.raw`
   .dashboard-sync.is-error .dashboard-sync-dot {
     background: var(--dash-danger);
     box-shadow: 0 0 0 4px rgba(201, 54, 79, 0.1);
+  }
+
+  .dashboard-sign-out {
+    display: inline-flex;
+    min-height: 1.85rem;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 0.48rem;
+    color: #7d8493;
+    background: transparent;
+    font-size: 0.68rem;
+    font-weight: 720;
+    cursor: pointer;
+    transition: 150ms ease;
+  }
+
+  .dashboard-sign-out:hover:not(:disabled) {
+    color: #303544;
+    border-color: var(--dash-line);
+    background: white;
+  }
+
+  .dashboard-sign-out:disabled {
+    cursor: wait;
+    opacity: 0.62;
+  }
+
+  .dashboard-sign-out svg {
+    width: 0.88rem;
+    height: 0.88rem;
+  }
+
+  .dashboard-sign-out-error {
+    margin: -0.65rem 1.25rem 1rem;
+    color: var(--dash-danger);
+    font-size: 0.68rem;
+    line-height: 1.35;
   }
 
   .dashboard-main {
@@ -1020,13 +1261,187 @@ const dashboardCss = String.raw`
 `;
 
 export default function Dashboard() {
+  const sync = useSyncStatus();
+
+  if (!sync.sessionReady) {
+    return <DashboardSessionLoading />;
+  }
+
+  if (!sync.session.authenticated) {
+    return <AuthDashboard sync={sync} />;
+  }
+
+  return <AuthenticatedDashboard />;
+}
+
+type DashboardSync = ReturnType<typeof useSyncStatus>;
+
+function DashboardSessionLoading() {
+  return (
+    <div className="dashboard-shell dashboard-auth-shell">
+      <style>{dashboardCss}</style>
+      <main className="dashboard-auth-main">
+        <section className="dashboard-auth-panel" aria-busy="true">
+          <div className="dashboard-auth-brand">
+            <span className="dashboard-brand-mark" aria-hidden="true">
+              <FiLayers />
+            </span>
+            <div>
+              <h1 className="dashboard-auth-title">Annotation Studio</h1>
+              <p className="dashboard-auth-subtitle">Opening session</p>
+            </div>
+          </div>
+          <p className="dashboard-auth-status">Loading...</p>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function AuthDashboard({ sync }: { sync: DashboardSync }) {
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const response = await fetch(`/api/auth/${mode}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: unknown };
+      if (!response.ok) {
+        throw new Error(
+          typeof body.error === 'string'
+            ? body.error
+            : `Authentication failed with HTTP ${response.status}`,
+        );
+      }
+      await sync.refreshSession();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="dashboard-shell dashboard-auth-shell">
+      <style>{dashboardCss}</style>
+      <main className="dashboard-auth-main">
+        <section className="dashboard-auth-panel">
+          <div className="dashboard-auth-brand">
+            <span className="dashboard-brand-mark" aria-hidden="true">
+              <FiLayers />
+            </span>
+            <div>
+              <h1 className="dashboard-auth-title">Annotation Studio</h1>
+              <p className="dashboard-auth-subtitle">Account</p>
+            </div>
+          </div>
+
+          <div className="dashboard-auth-tabs" role="tablist" aria-label="Account mode">
+            <button
+              type="button"
+              className={`dashboard-auth-tab${mode === 'login' ? ' is-selected' : ''}`}
+              onClick={() => {
+                setMode('login');
+                setAuthError(null);
+              }}
+              aria-selected={mode === 'login'}
+              role="tab"
+            >
+              <FiLogIn aria-hidden="true" />
+              Login
+            </button>
+            <button
+              type="button"
+              className={`dashboard-auth-tab${mode === 'signup' ? ' is-selected' : ''}`}
+              onClick={() => {
+                setMode('signup');
+                setAuthError(null);
+              }}
+              aria-selected={mode === 'signup'}
+              role="tab"
+            >
+              <FiUserPlus aria-hidden="true" />
+              Sign up
+            </button>
+          </div>
+
+          <form className="dashboard-auth-form" onSubmit={submitAuth}>
+            <label className="dashboard-auth-field">
+              <span>Username</span>
+              <span className="dashboard-auth-input-row">
+                <FiUser aria-hidden="true" />
+                <input
+                  className="dashboard-input"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  required
+                />
+              </span>
+            </label>
+
+            <label className="dashboard-auth-field">
+              <span>Password</span>
+              <span className="dashboard-auth-input-row">
+                <FiLock aria-hidden="true" />
+                <input
+                  className="dashboard-input"
+                  type="password"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </span>
+            </label>
+
+            {authError && (
+              <p className="dashboard-auth-error" role="alert">
+                {authError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="dashboard-button dashboard-button-primary"
+              disabled={submitting}
+            >
+              {mode === 'login' ? <FiLogIn aria-hidden="true" /> : <FiUserPlus aria-hidden="true" />}
+              {submitting ? 'Working...' : mode === 'login' ? 'Login' : 'Create account'}
+            </button>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function AuthenticatedDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const { isMobile } = useMobile();
   const sync = useSyncStatus();
-  const pages = useLiveQuery(db.select().from('pages'));
-  const annotations = useLiveQuery(db.select().from('annotations'));
+  const runtime = useSyncRuntime();
+  const pages = useSyncRows('pages');
+  const annotations = useSyncRows('annotations');
 
   const annotationPages = useMemo<AnnotationPage[]>(() => {
     const annotationRows = (annotations.data ?? []).map((row) =>
@@ -1182,19 +1597,13 @@ export default function Dashboard() {
 
     try {
       for (const annotation of pageToDelete.annotations) {
-        await db.delete().from('annotations').where(eq('id', annotation.id)).execute();
+        await deleteAnnotationRow(annotation.id, runtime);
       }
-      await db.delete().from('pages').where(eq('id', pageRow.id)).execute();
+      await deletePageRow(pageRow.id, runtime);
 
       try {
         const sourceUrl = new URL(pageUrl);
-        const website = (
-          await db
-            .select('id')
-            .from('websites')
-            .where(eq('origin', sourceUrl.origin))
-            .execute()
-        )[0];
+        const website = await findWebsiteByOrigin(sourceUrl.origin, runtime);
         if (website) {
           const pathname = sourceUrl.pathname === '/' ? '' : sourceUrl.pathname;
           await deleteFrameBundle(`/frame/${website.id}${pathname}${sourceUrl.search}`);
@@ -1235,7 +1644,7 @@ export default function Dashboard() {
     }
 
     try {
-      await db.delete().from('annotations').where(eq('id', annotationId)).execute();
+      await deleteAnnotationRow(annotationId, runtime);
     } catch (error) {
       alert(`Error deleting annotation: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -1260,10 +1669,10 @@ export default function Dashboard() {
     setEditingComment(null);
 
     try {
-      await db.update({
+      await updateAnnotationRow(edit.annotationId, {
         comment: edit.comment.trim() || null,
         updated_at: syncTimestamp(),
-      }).from('annotations').where(eq('id', edit.annotationId)).execute();
+      }, runtime);
     } catch (error) {
       alert(`Error saving comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -1275,8 +1684,8 @@ export default function Dashboard() {
       if (!absoluteUrl) throw new Error('Please enter a valid URL');
       const normalized = normalizeUrl(absoluteUrl);
 
-      await ensurePage(normalized);
-      await navigateToPage(normalized);
+      await ensurePage(normalized, '', runtime);
+      await navigateToPage(normalized, runtime);
     } catch (error) {
       alert(`Error opening page: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -1286,6 +1695,37 @@ export default function Dashboard() {
     event.preventDefault();
     void saveAndNavigateToPage(enterUrl);
   };
+
+  async function signOut() {
+    if (signingOut) return;
+
+    setSigningOut(true);
+    setSignOutError(null);
+
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { accept: 'application/json' },
+      });
+
+      const body = await response.json().catch(() => ({})) as { error?: unknown };
+      if (!response.ok) {
+        throw new Error(
+          typeof body.error === 'string'
+            ? body.error
+            : `Logout failed with HTTP ${response.status}`,
+        );
+      }
+
+      await sync.refreshSession();
+      setSidebarOpen(false);
+    } catch (error) {
+      setSignOutError(error instanceof Error ? error.message : 'Unable to log out');
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   const sidebarContent = (
     <>
@@ -1438,9 +1878,31 @@ export default function Dashboard() {
       </nav>
 
       <div className={`dashboard-sync ${syncTone}`} title={`Sync status: ${syncStatus}`}>
-        <span className="dashboard-sync-dot" aria-hidden="true" />
-        <span>Sync · {syncStatus}</span>
+        <span className="dashboard-sync-state">
+          <span className="dashboard-sync-dot" aria-hidden="true" />
+          <span className="dashboard-sync-copy">
+            <span className="dashboard-sync-label">Sync · {syncStatus}</span>
+            <span className="dashboard-account-label">Signed in as {sync.session.userId}</span>
+          </span>
+        </span>
+        <button
+          type="button"
+          className="dashboard-sign-out"
+          onClick={() => void signOut()}
+          disabled={signingOut}
+          aria-label="Sign out"
+          title={signingOut ? 'Signing out' : 'Sign out'}
+        >
+          <FiLogOut />
+          <span>{signingOut ? 'Logging out' : 'Logout'}</span>
+        </button>
       </div>
+
+      {signOutError && (
+        <p className="dashboard-sign-out-error" role="alert">
+          {signOutError}
+        </p>
+      )}
     </>
   );
 

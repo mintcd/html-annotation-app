@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Highlighter } from "../app/icons";
-import emptyStateStyles from "../styles/EmptyState.styles";
+import emptyStateStyles from "./styles/EmptyState.styles";
 
 export default function EmptyState({ mode = "compact" }: { mode?: "compact" | "card" }) {
   return (

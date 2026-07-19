@@ -1,0 +1,466 @@
+import type { Row } from '@/app/sync/sync.generated';
+import {
+  getCurrentSyncRuntime,
+  type AppSyncRuntime,
+} from './syncRuntime';
+import { normalizeUrl } from '../utils/url';
+
+const REMOTE_WEBSITE_TIMEOUT_MS = 5000;
+const REMOTE_WEBSITE_POLL_MS = 150;
+
+type AnnotationRow = Row<'annotations'>;
+type PageRow = Row<'pages'>;
+type WebsiteRow = Row<'websites'>;
+
+type AnnotationInput = {
+  id?: string;
+  page_id: string;
+  text: string;
+  html?: string | null;
+  color: string;
+  comment?: string | null;
+  created_at: string;
+  updated_at: string;
+  position?: Annotation['position'] | null;
+};
+
+type AnnotationPatch = {
+  text?: string;
+  html?: string | null;
+  color?: string;
+  comment?: string | null;
+  updated_at?: string;
+  position?: Annotation['position'] | null;
+};
+
+type SyncFlushMode = 'background' | 'await' | 'none';
+
+type SyncWriteOptions = {
+  flush?: SyncFlushMode;
+};
+
+export function syncTimestamp(): string {
+  return new Date().toISOString();
+}
+
+export async function ensurePage(
+  rawUrl: string,
+  title = '',
+  runtime?: AppSyncRuntime,
+): Promise<Page> {
+  const url = normalizeUrl(rawUrl);
+  const syncRuntime = activeRuntime(runtime);
+  const pages = syncRuntime.db.table('pages');
+  const existing = pages.all().find((page) => page.url === url);
+  if (existing) return normalizePageRow(existing);
+
+  const now = syncTimestamp();
+  const page: PageRow = {
+    id: crypto.randomUUID(),
+    url,
+    title,
+    number_of_scripts: 0,
+    number_of_annotations: 0,
+    created_at: now,
+    updated_at: now,
+  };
+
+  await pages.put(page);
+  flushSync('inserted page', syncRuntime);
+  return normalizePageRow(page);
+}
+
+export async function findPageById(
+  id: string,
+  runtime?: AppSyncRuntime,
+): Promise<Page | undefined> {
+  const row = activeRuntime(runtime).db.table('pages').get({ id });
+  return row ? normalizePageRow(row) : undefined;
+}
+
+export async function updatePageRow(
+  id: string,
+  changes: Partial<Pick<Page, 'title' | 'number_of_scripts' | 'number_of_annotations' | 'updated_at'>>,
+  runtime?: AppSyncRuntime,
+): Promise<Page | undefined> {
+  const syncRuntime = activeRuntime(runtime);
+  const pages = syncRuntime.db.table('pages');
+  const existing = pages.get({ id });
+  if (!existing) return undefined;
+
+  const next: PageRow = {
+    ...existing,
+    ...changes,
+  };
+  await pages.put(next);
+  flushSync('updated page', syncRuntime);
+  return normalizePageRow(next);
+}
+
+export async function deletePageRow(
+  id: string,
+  runtime?: AppSyncRuntime,
+): Promise<void> {
+  const syncRuntime = activeRuntime(runtime);
+  await syncRuntime.db.table('pages').delete({ id });
+  flushSync('deleted page', syncRuntime);
+}
+
+export async function getOrCreateWebsite(
+  rawOrigin: string,
+  runtime?: AppSyncRuntime,
+): Promise<Website> {
+  const origin = new URL(rawOrigin).origin;
+  const syncRuntime = activeRuntime(runtime);
+  const websites = syncRuntime.db.table('websites');
+  const existing = websites.all().find((website) => website.origin === origin);
+  if (existing) return normalizeWebsiteRow(existing);
+
+  const now = syncTimestamp();
+  const website: WebsiteRow = {
+    id: siteIdForOrigin(origin),
+    origin,
+    created_at: now,
+    updated_at: now,
+  };
+  await websites.put(website);
+  flushSync('inserted website', syncRuntime);
+  return normalizeWebsiteRow(website);
+}
+
+export async function findWebsiteByOrigin(
+  origin: string,
+  runtime?: AppSyncRuntime,
+): Promise<Website | undefined> {
+  const normalizedOrigin = new URL(origin).origin;
+  const row = activeRuntime(runtime)
+    .db
+    .table('websites')
+    .all()
+    .find((website) => website.origin === normalizedOrigin);
+  return row ? normalizeWebsiteRow(row) : undefined;
+}
+
+export async function ensureWebsiteAvailableForRoute(
+  website: Pick<Website, 'id' | 'origin'>,
+  timeoutMs = REMOTE_WEBSITE_TIMEOUT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: string | undefined;
+
+  while (Date.now() <= deadline) {
+    try {
+      if (await remoteWebsiteExists(website)) return;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await wait(REMOTE_WEBSITE_POLL_MS);
+  }
+
+  throw new Error(
+    lastError
+      ? `The site was saved locally, but is not available to the server yet: ${lastError}`
+      : 'The site was saved locally, but is not available to the server yet.',
+  );
+}
+
+export async function createAnnotationRow(
+  input: AnnotationInput,
+  runtime?: AppSyncRuntime,
+): Promise<Annotation> {
+  const syncRuntime = activeRuntime(runtime);
+  const annotations = syncRuntime.db.table('annotations');
+  const row = buildAnnotationRow(input);
+
+  await annotations.put(row);
+  flushSync('inserted annotation', syncRuntime);
+  return normalizeAnnotationRow(row);
+}
+
+export async function updateAnnotationRow(
+  id: string,
+  changes: AnnotationPatch,
+  runtime?: AppSyncRuntime,
+  options: SyncWriteOptions = {},
+): Promise<Annotation | undefined> {
+  const syncRuntime = activeRuntime(runtime);
+  const annotations = syncRuntime.db.table('annotations');
+  const existing = annotations.get({ id });
+  if (!existing) return undefined;
+
+  const anchor = annotationAnchorFields(
+    {
+      exact: existing.exact,
+      prefix: existing.prefix,
+      suffix: existing.suffix,
+    },
+    changes.text,
+    changes.position,
+  );
+  const next: AnnotationRow = {
+    ...existing,
+    ...anchor,
+    ...(changes.html === undefined ? {} : { html: changes.html || null }),
+    ...(changes.color === undefined ? {} : { color: changes.color }),
+    ...(changes.comment === undefined ? {} : { comment: changes.comment || null }),
+    ...(changes.updated_at === undefined ? {} : { updated_at: changes.updated_at }),
+  };
+
+  if (annotationRowsEqual(existing, next)) {
+    return normalizeAnnotationRow(existing);
+  }
+
+  await annotations.put(next);
+  await flushSync('updated annotation', syncRuntime, options.flush ?? 'background');
+  return normalizeAnnotationRow(next);
+}
+
+export async function deleteAnnotationRow(
+  id: string,
+  runtime?: AppSyncRuntime,
+): Promise<void> {
+  const syncRuntime = activeRuntime(runtime);
+  await syncRuntime.db.table('annotations').delete({ id });
+  flushSync('deleted annotation', syncRuntime);
+}
+
+export function normalizeAnnotationRow(row: Record<string, unknown>): Annotation {
+  const exact = stringValue(row.exact ?? row.text);
+  const prefix = stringValue(row.prefix);
+  const suffix = stringValue(row.suffix);
+
+  return {
+    id: String(row.id ?? ''),
+    page_id: String(row.page_id ?? ''),
+    text: exact,
+    html: typeof row.html === 'string' ? row.html : null,
+    color: typeof row.color === 'string' ? row.color : '#87ceeb',
+    comment: typeof row.comment === 'string' ? row.comment : null,
+    created_at: String(row.created_at ?? ''),
+    updated_at: String(row.updated_at ?? ''),
+    position: exact
+      ? { version: 1, start: 0, end: exact.length, exact, prefix, suffix }
+      : normalizePosition(row.position),
+  };
+}
+
+function buildAnnotationRow(input: AnnotationInput): AnnotationRow {
+  const anchor = annotationAnchorFields(
+    undefined,
+    input.text,
+    input.position,
+  );
+
+  return {
+    id: input.id ?? crypto.randomUUID(),
+    page_id: input.page_id,
+    exact: anchor.exact,
+    html: input.html || null,
+    created_at: input.created_at,
+    updated_at: input.updated_at,
+    color: input.color,
+    comment: input.comment || null,
+    prefix: anchor.prefix,
+    suffix: anchor.suffix,
+  };
+}
+
+function annotationAnchorFields(
+  current: Pick<AnnotationRow, 'exact' | 'prefix' | 'suffix'> | undefined,
+  text: string | undefined,
+  position: Annotation['position'] | null | undefined,
+): Pick<AnnotationRow, 'exact' | 'prefix' | 'suffix'> {
+  if (position && isTextAnchor(position)) {
+    return {
+      exact: position.exact,
+      prefix: position.prefix,
+      suffix: position.suffix,
+    };
+  }
+
+  if (text !== undefined) {
+    return {
+      exact: text,
+      prefix: current?.prefix ?? '',
+      suffix: current?.suffix ?? '',
+    };
+  }
+
+  return current ?? { exact: '', prefix: '', suffix: '' };
+}
+
+function annotationRowsEqual(left: AnnotationRow, right: AnnotationRow): boolean {
+  return left.id === right.id
+    && left.page_id === right.page_id
+    && left.exact === right.exact
+    && left.html === right.html
+    && left.created_at === right.created_at
+    && left.updated_at === right.updated_at
+    && left.color === right.color
+    && left.comment === right.comment
+    && left.prefix === right.prefix
+    && left.suffix === right.suffix;
+}
+
+function normalizePageRow(row: PageRow): Page {
+  return {
+    id: row.id,
+    url: row.url,
+    title: row.title,
+    number_of_scripts: row.number_of_scripts ?? 0,
+    number_of_annotations: row.number_of_annotations ?? 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function normalizeWebsiteRow(row: WebsiteRow): Website {
+  return {
+    id: row.id,
+    origin: row.origin,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function remoteWebsiteExists(website: Pick<Website, 'id' | 'origin'>): Promise<boolean> {
+  const params = new URLSearchParams({ id: String(website.id) });
+  const response = await fetch(`/api/websites?${params.toString()}`, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Website lookup returned ${response.status}`);
+  }
+
+  const rows = await response.json().catch(() => null) as unknown;
+  return Array.isArray(rows) && rows.some((row) => (
+    row
+    && typeof row === 'object'
+    && String((row as Website).id) === String(website.id)
+    && String((row as Website).origin) === String(website.origin)
+  ));
+}
+
+function activeRuntime(runtime: AppSyncRuntime | undefined): AppSyncRuntime {
+  return runtime ?? getCurrentSyncRuntime();
+}
+
+function flushSync(
+  label: string,
+  runtime: AppSyncRuntime,
+  mode: SyncFlushMode = 'background',
+): Promise<void> | undefined {
+  if (mode === 'none') {
+    return undefined;
+  }
+
+  const sync = runtime.sync().catch((error: unknown) => {
+    console.error(`Failed to flush ${label}`, error);
+    throw error;
+  });
+
+  if (mode === 'await') {
+    return sync;
+  }
+
+  void sync.catch(() => undefined);
+  return undefined;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function normalizePosition(value: unknown): Annotation['position'] {
+  let position = value;
+  if (typeof position === 'string') {
+    try {
+      position = JSON.parse(position);
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (Array.isArray(position)) {
+    const [startPosition, endPosition, startOffset, endOffset] = position;
+    return toPosition(startPosition, endPosition, startOffset, endOffset);
+  }
+
+  if (position && typeof position === 'object') {
+    const record = position as Record<string, unknown>;
+    if (Number(record.version) === 1) {
+      return toTextAnchor(record);
+    }
+    return toPosition(
+      record.startPosition ?? record.start_pos ?? record[0],
+      record.endPosition ?? record.end_pos ?? record[1],
+      record.startOffset ?? record.start_offset ?? record[2],
+      record.endOffset ?? record.end_offset ?? record[3],
+    );
+  }
+
+  return undefined;
+}
+
+function toPosition(
+  startPosition: unknown,
+  endPosition: unknown,
+  startOffset: unknown,
+  endOffset: unknown,
+): Annotation['position'] {
+  const values = [startPosition, endPosition, startOffset, endOffset].map(Number);
+  if (
+    values.some((value) => !Number.isInteger(value) || value < 0)
+    || values[1] < values[0]
+  ) return undefined;
+  return {
+    startPosition: values[0],
+    endPosition: values[1],
+    startOffset: values[2],
+    endOffset: values[3],
+  };
+}
+
+function toTextAnchor(record: Record<string, unknown>): TextAnchor | undefined {
+  const start = Number(record.start);
+  const end = Number(record.end);
+  const exact = typeof record.exact === 'string' ? record.exact : '';
+  const prefix = typeof record.prefix === 'string' ? record.prefix : '';
+  const suffix = typeof record.suffix === 'string' ? record.suffix : '';
+
+  if (
+    !Number.isInteger(start)
+    || !Number.isInteger(end)
+    || start < 0
+    || end <= start
+    || end - start !== exact.length
+    || exact.length === 0
+  ) return undefined;
+
+  return { version: 1, start, end, exact, prefix, suffix };
+}
+
+function isTextAnchor(
+  position: Annotation['position'] | null | undefined,
+): position is TextAnchor {
+  if (!position || typeof position !== 'object' || !('version' in position)) {
+    return false;
+  }
+  return position.version === 1;
+}
+
+function siteIdForOrigin(origin: string): string {
+  const url = new URL(origin);
+  const slug = `${url.hostname}${url.port ? `-${url.port}` : ''}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || crypto.randomUUID();
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}

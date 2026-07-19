@@ -8,7 +8,12 @@
 // iframe.contentDocument access for highlight injection and range matching.
 
 import * as cheerio from 'cheerio';
-import { getEnv } from '@/utils/env';
+import { getEnv } from '@/core/utils/env';
+import { syncSessionFromRequest } from '@/core/persistence/syncIdentity';
+import {
+  findSyncStateRow,
+  readSyncStreamState,
+} from '@/core/persistence/syncServerState';
 
 const BLOCKED_SCRIPT_HOSTS = [
   'googletagmanager.com', 'google-analytics.com', 'analytics.google.com',
@@ -139,8 +144,13 @@ export async function GET(
   const reqUrl = new URL(request.url);
 
   const env = getEnv();
-  const cookieRow = await env.DB.prepare('SELECT cookie FROM site_cookies WHERE site_id = ?')
-    .bind(site).first<{ cookie: string }>();
+  const state = await readSyncStreamState(syncSessionFromRequest(request));
+  const cookieRow = findSyncStateRow<{ cookie: string }>(
+    state,
+    'site_cookies',
+    'site_id',
+    site,
+  );
   const siteCookie: string | null = cookieRow ? cookieRow.cookie : null;
 
   // ── 1. Resolve origin ──────────────────────────────────────────────────
@@ -148,8 +158,12 @@ export async function GET(
   let storedHtml: string | null = null;
   try {
 
-    const row = await env.DB.prepare('SELECT origin FROM websites WHERE id = ?')
-      .bind(site).first<{ origin: string }>();
+    const row = findSyncStateRow<{ origin: string }>(
+      state,
+      'websites',
+      'id',
+      site,
+    );
     if (!row) return frameErrorResponse(`Unknown site: ${site}`);
     siteOrigin = row.origin;
 

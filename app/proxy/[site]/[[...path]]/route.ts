@@ -10,7 +10,11 @@
 // We only need to rewrite ROOT-RELATIVE paths ( /absolute ) that would
 // otherwise resolve against the app's own origin instead of the site's.
 
-import { getEnv } from "@/utils/env";
+import { syncSessionFromRequest } from "@/core/persistence/syncIdentity";
+import {
+  findSyncStateRow,
+  readSyncStreamState,
+} from "@/core/persistence/syncServerState";
 
 
 
@@ -20,16 +24,17 @@ export async function GET(
 ) {
   const reqUrl = new URL(request.url);
   const { site, path } = params;
-  const env = getEnv();
 
   // Get origin from slug and build upstream URL
   let siteOrigin: string;
   try {
-    const row = await env.DB.prepare(
-      "SELECT origin FROM websites WHERE id = ?"
-    )
-      .bind(site)
-      .first<{ origin: string }>();
+    const state = await readSyncStreamState(syncSessionFromRequest(request));
+    const row = findSyncStateRow<{ origin: string }>(
+      state,
+      "websites",
+      "id",
+      site,
+    );
 
     if (!row) {
       return new Response(`Unknown site slug: ${site}`, { status: 404 });
@@ -77,7 +82,7 @@ export async function GET(
 
   // ── 4. Text assets: targeted rewriting ──────────────────────────────────
   if (isScript || isScriptFile || isCss) {
-    let text = await upstream.text();
+    const text = await upstream.text();
     if (isScript || isScriptFile) {
 
       const contentType =

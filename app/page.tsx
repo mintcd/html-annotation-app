@@ -4,6 +4,6 @@ export function generateMetadata() {
   return { title: 'My Annotations' };
 }
 
-export default async function Page() {
+export default function Page() {
   return <Dashboard />;
 }

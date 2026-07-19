@@ -1,5 +1,5 @@
-import { getClonedPage } from "@/utils/clone";
-import { normalizeUrl } from "@/utils/url";
+import { getClonedPage } from "@/core/frame/clone";
+import { normalizeUrl } from "@/core/utils/url";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

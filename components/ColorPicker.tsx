@@ -1,8 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkey, useMobile } from "../hooks";
-import colorPickerStyles from "../styles/ColorPicker.styles";
-import { highlightBoundingRect } from "../utils/highlight";
+import colorPickerStyles from "./styles/ColorPicker.styles";
 import { useAnnotationContextOptional } from "../contexts/Annotator.context";
 
 type ColorPickerProps = {
@@ -41,28 +40,11 @@ export default function ColorPicker({
   const colorButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   const annotationCtx = useAnnotationContextOptional();
-  const iframeDoc = annotationCtx?.contentRef.current?.ownerDocument
-    ?? (typeof document !== 'undefined' ? document : null);
 
   const computedAnchorRect = useMemo(() => {
     if (!anchorId) return anchorRect ?? null;
-    if (!iframeDoc) return anchorRect ?? null;
-
-    try {
-      const rect = highlightBoundingRect(anchorId, iframeDoc);
-      const iframeRect = annotationCtx?.iframeRef.current?.getBoundingClientRect();
-      return {
-        top: rect.top + (iframeRect?.top ?? 0),
-        bottom: rect.bottom + (iframeRect?.top ?? 0),
-        left: rect.left + (iframeRect?.left ?? 0),
-        right: rect.right + (iframeRect?.left ?? 0),
-        width: rect.width,
-        height: rect.height,
-      };
-    } catch {
-      return anchorRect ?? null;
-    }
-  }, [anchorId, anchorRect, annotationCtx?.iframeRef, iframeDoc]);
+    return annotationCtx?.session.getHighlightRect(anchorId) ?? anchorRect ?? null;
+  }, [anchorId, anchorRect, annotationCtx?.session]);
 
   useEffect(() => {
     previouslyFocused.current = document.activeElement as HTMLElement | null;

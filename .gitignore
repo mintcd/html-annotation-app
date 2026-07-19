@@ -12,7 +12,7 @@
 # next.js
 /.next/
 /out/
-
+.vinext
 # production
 /build
 
@@ -38,3 +38,4 @@ dist
 
 # IDE
 .vscode
+.agents

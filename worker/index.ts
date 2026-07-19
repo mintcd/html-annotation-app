@@ -7,9 +7,9 @@
  */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import type { Env } from "../utils/env";
+import type { Env } from "../core/utils/env";
 
-export default {
+const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     globalThis.__origin = url.origin;
@@ -33,3 +33,5 @@ export default {
     return handler.fetch(request);
   },
 };
+
+export default worker;

@@ -5,7 +5,7 @@ import {
   frameCacheName,
   normalizeFrameUrl,
   stableFrameId,
-} from '../utils/frameCache.ts';
+} from '../core/frame/cache.ts';
 
 test('normalizes frame cache keys to absolute URLs without fragments', () => {
   assert.equal(

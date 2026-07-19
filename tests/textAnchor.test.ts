@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  createTextIndex,
   findTextAnchorMatch,
-  getRange,
   normalizeAnchorText,
-} from '../utils/dom.ts';
+} from '../core/annotation/model/index.ts';
+import {
+  createTextIndex,
+  getRange,
+} from '../core/annotation/dom/index.ts';
 
 class FakeText {
   parentElement: FakeElement;

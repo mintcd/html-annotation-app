@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAnnotationContext } from '../contexts/Annotator.context';
 import { useAnnotatorOverlayOptional } from '../contexts/AnnotatorOverlay.context';
 import { Save, Times } from '../app/icons';
-import { Button } from '../design-system/button';
+import { Button } from './design-system/button';
 import { useCoarsePointer } from '../hooks';
-import sticksStyles from '../styles/Sticks.styles';
+import sticksStyles from './styles/Sticks.styles';
 import {
   cleanedHtml,
   createTextAnchor,
@@ -15,7 +15,7 @@ import {
   highlightRange,
   rangeToHtml,
   removeHighlights,
-} from '../utils/dom';
+} from '../core/annotation/dom';
 
 type Boundary = 'start' | 'end';
 
@@ -229,9 +229,7 @@ function restoreUserSelection(snapshot: UserSelectSnapshot | null): void {
 export default function AnnotationResizeHandles({ annotationId, onResize }: Props) {
   const {
     annotations,
-    contentRef,
-    iframeReady,
-    iframeRef,
+    session,
     updateAnnotation,
   } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
@@ -265,7 +263,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
   }, [annotations]);
 
   const currentRange = useCallback((): Range | null => {
-    const root = contentRef.current;
+    const root = session.root;
     if (!root) return null;
 
     const doc = root.ownerDocument;
@@ -279,11 +277,11 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     } catch {
       return null;
     }
-  }, [annotationId, contentRef]);
+  }, [annotationId, session.root]);
 
   const measure = useCallback(() => {
-    const root = contentRef.current;
-    const iframe = iframeRef.current;
+    const root = session.root;
+    const iframe = session.frame;
     if (!root || !iframe) {
       setGeometry(null);
       return;
@@ -309,7 +307,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       ) return previous;
       return next;
     });
-  }, [contentRef, currentRange, iframeRef]);
+  }, [currentRange, session.frame, session.root]);
 
   const scheduleMeasure = useCallback(() => {
     if (measureFrameRef.current !== null) return;
@@ -324,12 +322,12 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
   }, [annotations, annotationId, scheduleMeasure]);
 
   useEffect(() => {
-    if (!iframeReady) return;
+    if (!session.ready) return;
 
-    const iframe = iframeRef.current;
-    const root = contentRef.current;
+    const iframe = session.frame;
+    const root = session.root;
     const iframeWindow = iframe?.contentWindow;
-    const iframeDocument = iframe?.contentDocument;
+    const iframeDocument = session.document;
     const visualViewport = window.visualViewport;
     const onViewportChange = () => scheduleMeasure();
     const onScroll = () => {
@@ -375,11 +373,11 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
         scrollTimeoutRef.current = null;
       }
     };
-  }, [contentRef, iframeReady, iframeRef, scheduleMeasure]);
+  }, [scheduleMeasure, session.document, session.frame, session.ready, session.root]);
 
   const commitRange = useCallback((candidate: Range): Range | null => {
-    const root = contentRef.current;
-    const iframe = iframeRef.current;
+    const root = session.root;
+    const iframe = session.frame;
     const annotation = annotationsRef.current.find(({ id }) => id === annotationId);
     if (!root || !iframe || !annotation || candidate.collapsed || !rangeInsideRoot(candidate, root)) {
       return null;
@@ -453,12 +451,12 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
         || !previousPosition
       ) return;
 
-      const latestRoot = contentRef.current;
-      const latestIframe = iframeRef.current;
+      const latestRoot = session.root;
+      const latestFrame = session.frame;
       if (
         !latestRoot
         || !latestRoot.isConnected
-        || latestIframe?.contentDocument !== latestRoot.ownerDocument
+        || latestFrame?.contentDocument !== latestRoot.ownerDocument
       ) return;
 
       try {
@@ -509,12 +507,12 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       onResize?.();
     });
     return updatedRange;
-  }, [annotationId, contentRef, iframeRef, onResize, scheduleMeasure, updateAnnotation]);
+  }, [annotationId, onResize, scheduleMeasure, session.frame, session.root, updateAnnotation]);
 
   const updateCandidateAtPoint = useCallback((clientX: number, clientY: number) => {
     const drag = dragRef.current;
-    const root = contentRef.current;
-    const iframe = iframeRef.current;
+    const root = session.root;
+    const iframe = session.frame;
     if (!drag || !root || !iframe) return;
 
     const caret = caretRangeFromParentPoint(clientX, clientY, iframe, root);
@@ -546,7 +544,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     pendingRangeRef.current = candidate;
     replaceFrameSelection(iframe, candidate);
     measure();
-  }, [contentRef, iframeRef, measure]);
+  }, [measure, session.frame, session.root]);
 
   const queuePointerUpdate = useCallback((clientX: number, clientY: number) => {
     latestPointerRef.current = { x: clientX, y: clientY };
@@ -575,7 +573,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     userSelectSnapshotRef.current = null;
     setDragging(null);
 
-    const iframe = iframeRef.current;
+    const iframe = session.frame;
     if (nativeResizeActive) {
       const staged = commit && candidate ? candidate : drag.baseRange.cloneRange();
       pendingRangeRef.current = staged;
@@ -594,13 +592,13 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       virtualDragMarkerRef.current = false;
     }
     scheduleMeasure();
-  }, [annotationId, commitRange, iframeRef, nativeResizeActive, scheduleMeasure]);
+  }, [annotationId, commitRange, nativeResizeActive, scheduleMeasure, session.frame]);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>, boundary: Boundary) => {
     if ((event.pointerType === 'mouse' && event.button !== 0) || dragRef.current) return;
 
-    const root = contentRef.current;
-    const iframe = iframeRef.current;
+    const root = session.root;
+    const iframe = session.frame;
     const range = currentRange();
     if (!root || !iframe || !range) return;
 
@@ -620,7 +618,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     }
     userSelectSnapshotRef.current = disableUserSelection([document, root.ownerDocument]);
     setDragging(boundary);
-  }, [annotationId, contentRef, currentRange, iframeRef]);
+  }, [annotationId, currentRange, session.frame, session.root]);
 
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId !== event.pointerId) return;
@@ -665,11 +663,11 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
   }, [annotationId, coarse, contextual, pointerCapabilityResolved, showHighlight]);
 
   useEffect(() => {
-    if (!nativeResizeActive || !iframeReady) return;
+    if (!nativeResizeActive || !session.ready) return;
 
-    const root = contentRef.current;
-    const iframe = iframeRef.current;
-    const doc = iframe?.contentDocument;
+    const root = session.root;
+    const iframe = session.frame;
+    const doc = session.document;
     const initialRange = currentRange();
     if (!root || !iframe || !doc || !initialRange) {
       const resetFrame = window.requestAnimationFrame(() => setNativeSelectionReady(false));
@@ -709,17 +707,18 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     };
   }, [
     annotationId,
-    contentRef,
     currentRange,
-    iframeReady,
-    iframeRef,
     nativeResizeActive,
     scheduleMeasure,
+    session.document,
+    session.frame,
+    session.ready,
+    session.root,
   ]);
 
   const finishNativeResize = useCallback((save: boolean) => {
-    const root = contentRef.current;
-    const iframe = iframeRef.current;
+    const root = session.root;
+    const iframe = session.frame;
     if (!root || !iframe) return;
 
     const selected = getSelectedRange(iframe, root);
@@ -730,11 +729,11 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
     pendingRangeRef.current = null;
     showHighlight?.(annotationId);
     scheduleMeasure();
-  }, [annotationId, commitRange, contentRef, iframeRef, scheduleMeasure, showHighlight]);
+  }, [annotationId, commitRange, scheduleMeasure, session.frame, session.root, showHighlight]);
 
   useEffect(() => {
     mountedRef.current = true;
-    const iframe = iframeRef.current;
+    const iframe = session.frame;
     return () => {
       mountedRef.current = false;
       if (pointerMoveFrameRef.current !== null) {
@@ -756,7 +755,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       latestPointerRef.current = null;
       restoreUserSelection(userSelectSnapshotRef.current);
     };
-  }, [annotationId, iframeRef]);
+  }, [annotationId, session.frame]);
 
   const overlayAllowsResize = !contextual
     || contextual.type === 'highlight'

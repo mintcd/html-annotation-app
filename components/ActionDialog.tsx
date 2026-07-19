@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect } from 'react';
-import { Button, type ButtonVariant } from '../design-system/button';
-import promptBoxStyles from '../styles/PromptBox.styles';
+import { Button, type ButtonVariant } from './design-system/button';
+import promptBoxStyles from './styles/PromptBox.styles';
 
 type Action = {
   label: string;

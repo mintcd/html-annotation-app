@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Select, type SelectOption } from '../design-system/select';
+import { Select, type SelectOption } from './design-system/select';
 
 type DropdownOption<T extends string = string> = SelectOption<T>;
 

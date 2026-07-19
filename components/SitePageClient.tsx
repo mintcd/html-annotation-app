@@ -1,48 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { eq, useLiveQuery, useSyncStatus } from "@mintcd/sync-engine";
+import { useEffect, useState } from "react";
 import Annotator from "@/components/Annotator";
 import Loader from "@/components/Loader";
-import { db } from "@/utils/engine";
-import { normalizeUrl, appPathToPageUrl } from "@/utils/url";
-import { ensurePage } from "@/utils/syncData";
+import {
+  ensurePage,
+  useSyncRows,
+  useSyncRuntime,
+  useSyncStatus,
+} from "@/core/persistence";
 
 type SitePageClientProps = {
-  site: string;
-  path?: string[];
-  search: string;
+  pageUrl: string;
+  proxiedUrl: string;
 };
 
-export default function SitePageClient({ site, path, search }: SitePageClientProps) {
+export default function SitePageClient({
+  pageUrl,
+  proxiedUrl,
+}: SitePageClientProps) {
   const sync = useSyncStatus();
-  const website = useLiveQuery(
-    db.select().from("websites").where(eq("id", site)),
-  );
-  const row = website.data?.[0];
-
-  if (website.loading || (!row && sync.isSyncing)) return <Loader />;
-  if (website.error) return <PageError message={website.error} />;
-  if (!row) return <PageError message={`Unknown site: ${site}`} />;
-
-  return <ResolvedSitePage site={site} path={path} search={search} origin={row.origin} />;
-}
-
-function ResolvedSitePage({
-  site,
-  path,
-  search,
-  origin,
-}: SitePageClientProps & { origin: string }) {
-  const sync = useSyncStatus();
-  const url = useMemo(
-    () => normalizeUrl(appPathToPageUrl(origin, path, search)),
-    [origin, path, search],
-  );
-  const page = useLiveQuery(db.select().from("pages").where(eq("url", url)));
-  const pageRow = page.data?.[0];
+  const runtime = useSyncRuntime();
+  const page = useSyncRows("pages");
+  const pageRow = page.data?.find((row) => row.url === pageUrl);
   const [createError, setCreateError] = useState<{ url: string; message: string }>();
-  const currentCreateError = createError?.url === url ? createError.message : undefined;
+  const currentCreateError = createError?.url === pageUrl ? createError.message : undefined;
 
   useEffect(() => {
     let active = true;
@@ -53,10 +35,10 @@ function ResolvedSitePage({
       };
     }
 
-    void ensurePage(url).catch((error) => {
+    void ensurePage(pageUrl, '', runtime).catch((error) => {
       if (!active) return;
       setCreateError({
-        url,
+        url: pageUrl,
         message: error instanceof Error ? error.message : String(error),
       });
     });
@@ -64,7 +46,7 @@ function ResolvedSitePage({
     return () => {
       active = false;
     };
-  }, [page.loading, pageRow, sync.isSyncing, url]);
+  }, [page.loading, pageRow, runtime, sync.isSyncing, pageUrl]);
 
   if (page.loading || (!pageRow && sync.isSyncing))
     return <Loader />;
@@ -77,10 +59,7 @@ function ResolvedSitePage({
 
   if (!pageRow) return <Loader />;
 
-  const framePathname = path?.length ? path.join("/") : "";
-  const frameUrl = `/frame/${site}${framePathname ? `/${framePathname}` : ""}${search}`;
-
-  return <Annotator pageId={String(pageRow.id)} pageUrl={url} iframeUrl={frameUrl} />;
+  return <Annotator pageId={String(pageRow.id)} pageUrl={pageUrl} iframeUrl={proxiedUrl} />;
 }
 
 function PageError({ message }: { message: string }) {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, type RefObject } from 'react';
-import { useAnnotatorFrame } from '../hooks/useAnnotatorFrame';
+import { useCallback } from 'react';
+import { useAnnotationSession } from '../core/annotation/session/useAnnotationSession';
 import { AnnotationContext } from '../contexts/Annotator.context';
 import {
   AnnotatorOverlayProvider,
@@ -15,15 +15,14 @@ import {
   OverlayRoot,
   WorkspaceLayer,
 } from './overlay';
-import { Button } from '../design-system/button';
+import { Button } from './design-system/button';
 import AnnotationsPanel from './AnnotationsPanel';
 import SelectionToolbar from './SelectionToolbar';
 import FocusedAnnotationToolbar from './FocusedAnnotationToolbar';
 import ActionDialog from './ActionDialog';
 import PasteHtmlDialog from './PasteHtmlDialog';
 import Loader from './Loader';
-import AnnotatedPageFrame from './AnnotatedPageFrame';
-import annotationStyles from '../styles/Annotator.styles';
+import annotationStyles from './styles/Annotator.styles';
 
 export type AnnotatorProps = {
   pageId: string;
@@ -50,56 +49,63 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
     initialTitle,
   } = props;
   const overlay = useAnnotatorOverlay();
-  const frame = useAnnotatorFrame({
+  const session = useAnnotationSession({
     pageId,
+    pageUrl,
     iframeUrl,
     initialTitle,
     onExternalHref: overlay.showExternalLink,
   });
+  const {
+    attachFrame,
+    ready,
+    error,
+    title,
+    framePath,
+    frameSourceUrl,
+    reportFrameError,
+    reloadFrame,
+    openInAnnotator: openHrefInAnnotator,
+    openOriginal: openHrefOriginal,
+  } = session;
   const pendingHref = overlay.dialog.type === 'externalLink' ? overlay.dialog.href : null;
   const showPasteHtml = overlay.dialog.type === 'pasteHtml';
 
   const openInAnnotator = useCallback(async (href: string) => {
-    await frame.openInAnnotator(href);
+    await openHrefInAnnotator(href);
     overlay.closeDialog();
-  }, [frame, overlay]);
+  }, [openHrefInAnnotator, overlay]);
 
   const openOriginal = useCallback((href: string) => {
-    frame.openOriginal(href);
+    openHrefOriginal(href);
     overlay.closeDialog();
-  }, [frame, overlay]);
+  }, [openHrefOriginal, overlay]);
 
   const openPasteHtml = useCallback(() => {
-    overlay.showPasteHtml(frame.iframeError || undefined);
-  }, [frame.iframeError, overlay]);
+    overlay.showPasteHtml(error || undefined);
+  }, [error, overlay]);
 
   return (
     <>
-      <AnnotatedPageFrame
-        frameUrl={iframeUrl}
-        frameRef={frame.iframeRef}
-        iframeProps={{
-          id: 'annotated-frame',
-          title: frame.title || 'Page being annotated',
-          onLoad: frame.handleFrameLoad,
-          onError: () => {
-            const message = 'The proxied page could not be loaded.';
-            frame.reportFrameError(message);
-            overlay.showPasteHtml(message);
-          },
-          style: { width: '100%', height: '100dvh', border: 'none', display: 'block' },
+      <iframe
+        ref={attachFrame}
+        id="annotated-frame"
+        title={title || 'Page being annotated'}
+        src={frameSourceUrl}
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        onError={() => {
+          const message = 'The proxied page could not be loaded.';
+          reportFrameError(message);
+          overlay.showPasteHtml(message);
         }}
+        style={{ width: '100%', height: '100dvh', border: 'none', display: 'block' }}
       />
 
       <AnnotationContext
         initialAnnotations={initialAnnotations}
         pageId={pageId}
-        title={frame.title}
         pageUrl={pageUrl}
-        contentRef={frame.contentRef as RefObject<HTMLElement>}
-        iframeRef={frame.iframeRef as RefObject<HTMLIFrameElement>}
-        iframeUrl={iframeUrl}
-        iframeReady={frame.iframeReady}
+        session={session}
       >
         <OverlayRoot>
           <WorkspaceLayer>
@@ -119,8 +125,8 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
           </ContextualLayer>
 
           <FeedbackLayer>
-            {!frame.iframeReady && <Loader />}
-            {frame.iframeError && !showPasteHtml && (
+            {!ready && <Loader />}
+            {error && !showPasteHtml && (
               <div role="alert" style={annotationStyles.errorToast}>
                 <span style={annotationStyles.errorCopy}>
                   <strong style={annotationStyles.errorTitle}>Page unavailable</strong>
@@ -157,12 +163,12 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
             {showPasteHtml && (
               <OverlayFocusScope>
                 <PasteHtmlDialog
-                  error={overlay.dialog.type === 'pasteHtml' ? overlay.dialog.error : frame.iframeError}
+                  error={overlay.dialog.type === 'pasteHtml' ? overlay.dialog.error : error}
                   site={pageUrl}
-                  path={frame.framePath}
+                  path={framePath}
                   onSuccess={() => {
                     overlay.closeDialog();
-                    void frame.reloadFrame();
+                    void reloadFrame();
                   }}
                   onClose={overlay.closeDialog}
                 />

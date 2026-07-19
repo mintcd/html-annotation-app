@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { PasteHtml } from '../app/icons';
-import { Button } from '../design-system/button';
-import promptBoxStyles from '../styles/PromptBox.styles';
-import pasteHtmlStyles from '../styles/PasteHTML.styles';
+import { Button } from './design-system/button';
+import promptBoxStyles from './styles/PromptBox.styles';
+import pasteHtmlStyles from './styles/PasteHTML.styles';
 
 type Props = {
   error?: string;

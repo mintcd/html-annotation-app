@@ -7,7 +7,7 @@ import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.contex
 export function useActiveAnnotationId() {
   const [activeAnnotationId, setFocusedId] = useState<string | null>(null);
   const focusedIdRef = useRef<string | null>(null);
-  const { iframeRef, iframeReady } = useAnnotationContext();
+  const { session } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
 
   const updateFocusedId = useCallback((id: string | null) => {
@@ -25,8 +25,8 @@ export function useActiveAnnotationId() {
     : activeAnnotationId;
 
   useEffect(() => {
-    if (!iframeReady) return;
-    const iDoc = iframeRef.current?.contentDocument;
+    if (!session.ready) return;
+    const iDoc = session.document;
     if (!iDoc) return;
 
     const handleInteraction = (e: Event) => {
@@ -47,6 +47,11 @@ export function useActiveAnnotationId() {
         if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
           return;
         }
+      }
+
+      const activeSelection = iDoc.getSelection();
+      if (activeSelection && activeSelection.rangeCount > 0 && !activeSelection.isCollapsed) {
+        return;
       }
 
       // Don't handle clicks on the menu itself
@@ -98,7 +103,7 @@ export function useActiveAnnotationId() {
       iDoc.removeEventListener('pointerup', handleInteraction);
       iDoc.removeEventListener('keydown', handleKeyDown as EventListener);
     };
-  }, [iframeReady, iframeRef, overlay, overlayAnnotationId, updateFocusedId]);
+  }, [session.document, session.ready, overlay, overlayAnnotationId, updateFocusedId]);
 
   return { activeAnnotationId: visibleAnnotationId, setFocusedId: updateFocusedId };
 }

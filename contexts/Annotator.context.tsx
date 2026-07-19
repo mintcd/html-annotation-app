@@ -10,11 +10,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { removeHighlights } from "../utils/dom";
-import { highlightAnnotations } from "../utils/annotations";
-import { eq, useLiveQuery, useSyncStatus } from "@mintcd/sync-engine";
-import { db } from "../utils/engine";
-import { ensurePage, normalizeAnnotationRow, syncTimestamp } from "../utils/syncData";
+import type { AnnotationSession } from "../core/annotation/session/useAnnotationSession";
+import { useSyncRows, useSyncRuntime, useSyncStatus } from "../core/persistence";
+import {
+  createAnnotationRow,
+  deleteAnnotationRow,
+  ensurePage,
+  normalizeAnnotationRow,
+  syncTimestamp,
+  updateAnnotationRow,
+  updatePageRow,
+} from "../core/persistence";
 
 type AnnotationPosition = NonNullable<Annotation['position']>;
 
@@ -32,22 +38,12 @@ type AnnotationContextProps = {
   initialAnnotations?: Annotation[];
   pageId: string;
   pageUrl: string;
-  title?: string;
-  contentRef: React.RefObject<HTMLElement>;
-  /** Ref to the <iframe> element, when content is rendered inside one. */
-  iframeRef: React.RefObject<HTMLIFrameElement | null>;
-  /** The iframe URL used to render the page (/_frame/slug/...) */
-  iframeUrl?: string;
-  /** True once the iframe has finished loading its real content. */
-  iframeReady: boolean;
+  session: AnnotationSession;
 };
 
 type AnnotationContextType = {
-  contentRef: React.RefObject<HTMLElement>;
-  iframeRef: React.RefObject<HTMLIFrameElement | null>;
-  iframeReady: boolean;
+  session: AnnotationSession;
   annotations: Annotation[];
-  iframeUrl?: string;
   pageUrl?: string;
   title?: string;
   currentHighlightColor: string;
@@ -80,17 +76,16 @@ export function AnnotationContext({
   initialAnnotations,
   pageId,
   pageUrl,
-  title,
-  contentRef,
-  iframeRef,
-  iframeUrl,
-  iframeReady,
+  session,
 }: AnnotationContextProps) {
   const [currentHighlightColor, setCurrentHighlightColor] = useState<string>("#87ceeb");
   const [lastAutoSaveStatus, setLastAutoSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [initialMatchingComplete, setInitialMatchingComplete] = useState(false);
   const initialHighlightsApplied = useRef(false);
+  const matchingGeneration = useRef(0);
   const sync = useSyncStatus();
-  const liveAnnotations = useLiveQuery(db.select().from('annotations'));
+  const runtime = useSyncRuntime();
+  const liveAnnotations = useSyncRows('annotations');
 
   const sourceAnnotations = useMemo(
     () => liveAnnotations.data
@@ -108,20 +103,35 @@ export function AnnotationContext({
   }, [sourceAnnotations]);
 
   useEffect(() => {
-    if (!iframeReady) {
+    if (!session.ready) {
+      matchingGeneration.current++;
       initialHighlightsApplied.current = false;
+      setInitialMatchingComplete(false);
       return;
     }
 
     if (
       liveAnnotations.loading
       || initialHighlightsApplied.current
-      || !contentRef.current
+      || !session.root
     ) return;
 
     initialHighlightsApplied.current = true;
-    void highlightAnnotations(sourceAnnotations, contentRef.current);
-  }, [contentRef, iframeReady, liveAnnotations.loading, sourceAnnotations]);
+    setInitialMatchingComplete(false);
+
+    const generation = ++matchingGeneration.current;
+    void session.applyAnnotations(sourceAnnotations).finally(() => {
+      if (matchingGeneration.current === generation) {
+        setInitialMatchingComplete(true);
+      }
+    });
+  }, [liveAnnotations.loading, runtime, session, sourceAnnotations]);
+
+  const contentSession = useMemo<AnnotationSession>(() => ({
+    ...session,
+    ready: session.ready && initialMatchingComplete,
+    root: initialMatchingComplete ? session.root : null,
+  }), [initialMatchingComplete, session]);
 
   const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position?: AnnotationPosition }): Promise<{ tempId: string; promise: Promise<string> }> => {
     const { text, html, color, position } = payload;
@@ -141,21 +151,19 @@ export function AnnotationContext({
 
     const promise = (async () => {
       try {
-        const page = await ensurePage(pageUrl, title ?? '');
+        const page = await ensurePage(pageUrl, session.title ?? '', runtime);
         const canonicalPageId = String(page.id);
 
-        if (title) {
-          const existingPages = await db.select('id', 'title').from('pages').where(eq('id', canonicalPageId)).execute();
-          const existingPage = existingPages && existingPages.length ? existingPages[0] : null;
-          if (existingPage && existingPage.title !== title) {
-            await db.update({ title, updated_at: syncTimestamp() })
-              .from('pages')
-              .where(eq('id', canonicalPageId))
-              .execute();
+        if (session.title) {
+          if (page.title !== session.title) {
+            await updatePageRow(canonicalPageId, {
+              title: session.title,
+              updated_at: syncTimestamp(),
+            }, runtime);
           }
         }
 
-        const result = await db.insert({
+        const inserted = await createAnnotationRow({
           page_id: canonicalPageId,
           text,
           html: html || null,
@@ -164,9 +172,8 @@ export function AnnotationContext({
           created_at: now,
           updated_at: now,
           position: position ?? null,
-        }).from('annotations').execute();
-        const insertedId = result.rows[0]?.id;
-        if (!insertedId) throw new Error('Annotation insert did not return an id');
+        }, runtime);
+        const insertedId = inserted.id;
 
         setAnnotations(prev => prev.map(ann => (
           ann.id === tempId
@@ -186,34 +193,27 @@ export function AnnotationContext({
     })();
 
     return { tempId, promise };
-  }, [pageId, pageUrl, title]);
+  }, [pageId, pageUrl, runtime, session.title]);
 
   const deleteAnnotation = useCallback(async (id: string) => {
-    if (contentRef.current) removeHighlights(contentRef.current, id);
+    session.removeHighlight(id);
     setAnnotations(prev => prev.filter((a) => a.id !== id));
 
     try {
-      await db.delete().from('annotations').where(eq('id', id)).execute();
+      await deleteAnnotationRow(id, runtime);
       setLastAutoSaveStatus({ success: true, message: "Annotation delete queued" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setLastAutoSaveStatus({ success: false, message: errorMessage });
       console.error("Failed to queue delete annotation:", error);
     }
-  }, [contentRef]);
+  }, [runtime, session]);
 
   const updateAnnotation = useCallback(async (params: AnnotationUpdate) => {
     const { id, comment, color, text, html, position } = params;
 
     // If color is updated, also update DOM highlights immediately for UX.
-    if (color !== undefined && contentRef.current) {
-      const spans = contentRef.current.querySelectorAll<HTMLSpanElement>(
-        `span.highlighted-text[data-highlight-id="${id}"]`
-      );
-      spans.forEach(span => {
-        span.style.backgroundColor = color;
-      });
-    }
+    if (color !== undefined) session.updateHighlightColor(id, color);
 
     setAnnotations(prev => prev.map(ann => {
       if (ann.id !== id) return ann;
@@ -222,18 +222,24 @@ export function AnnotationContext({
       if (color !== undefined) updated.color = color;
       if (text !== undefined) updated.text = text;
       if (html !== undefined) updated.html = html;
-      if (position !== undefined) updated.position = position;
+      if (position !== undefined) {
+        updated.position = position;
+        if ('version' in position && position.version === 1) {
+          updated.text = position.exact;
+        }
+      }
       return updated;
     }));
 
     try {
-      const changes: Record<string, unknown> = { updated_at: syncTimestamp() };
-      if (text !== undefined) changes.text = text;
-      if (html !== undefined) changes.html = html;
-      if (position !== undefined) changes.position = position;
-      if (color !== undefined) changes.color = color;
-      if (comment !== undefined) changes.comment = comment !== '' ? comment : null;
-      await db.update(changes).from('annotations').where(eq('id', id)).execute();
+      await updateAnnotationRow(id, {
+        text,
+        html,
+        position,
+        color,
+        comment: comment !== undefined ? comment.trim() || null : undefined,
+        updated_at: syncTimestamp(),
+      }, runtime);
       setLastAutoSaveStatus({ success: true, message: "Annotation update queued" });
       return true;
     } catch (error) {
@@ -242,7 +248,7 @@ export function AnnotationContext({
       console.error("Failed to queue annotation update:", error);
       return false;
     }
-  }, [contentRef]);
+  }, [runtime, session]);
 
   const syncStatus = useMemo<'synced' | 'syncing' | 'pending'>(() => {
     if (sync.isSyncing) return 'syncing';
@@ -251,13 +257,10 @@ export function AnnotationContext({
   }, [sync.isSyncing, sync.pendingCount, sync.status]);
 
   const value = useMemo(() => ({
-    contentRef,
-    iframeRef,
-    iframeReady,
+    session: contentSession,
     annotations,
-    iframeUrl,
     pageUrl,
-    title,
+    title: contentSession.title,
     currentHighlightColor,
     setCurrentHighlightColor,
     addAnnotation,
@@ -265,7 +268,7 @@ export function AnnotationContext({
     updateAnnotation,
     syncStatus,
     lastAutoSaveStatus,
-  }), [contentRef, iframeRef, iframeReady, annotations, iframeUrl, pageUrl, title, currentHighlightColor,
+  }), [contentSession, annotations, pageUrl, currentHighlightColor,
     setCurrentHighlightColor, addAnnotation, deleteAnnotation, updateAnnotation,
     syncStatus, lastAutoSaveStatus]);
 

@@ -1,15 +1,15 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "../design-system/button";
-import { IconButton } from "../design-system/icon-button";
-import { Latex } from "../design-system/latex";
+import { Button } from "./design-system/button";
+import { IconButton } from "./design-system/icon-button";
+import { Latex } from "./design-system/latex";
 import { Comment, Edit, Save, Times, Trash } from "../app/icons";
 import ActionDialog from "./ActionDialog";
 import CommentEditor from "./CommentEditor";
 import EmptyState from "./EmptyState";
 import { useAnnotationContextOptional } from "../contexts/Annotator.context";
-import styles from "../styles/AnnotationList.styles";
+import styles from "./styles/AnnotationList.styles";
 
 type AnnotationListProps = {
   scrollToAnnotation?: (id: string) => void;

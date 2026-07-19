@@ -6,10 +6,9 @@ import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.contex
 import { useActiveAnnotationId } from "../hooks/MenuOnFocus.hooks";
 import { useCoarsePointer } from "../hooks";
 import { Delete, Highlighter, Comment, Resize, Send } from "../app/icons";
-import { IconButton } from "../design-system/icon-button";
-import useMenuOnFocusStyles from "../styles/MenuOnFocus.styles";
+import { IconButton } from "./design-system/icon-button";
+import useMenuOnFocusStyles from "./styles/MenuOnFocus.styles";
 import AnnotationResizeHandles from "./AnnotationResizeHandles";
-import { highlightBoundingRect } from "../utils/highlight";
 
 export default function FocusedAnnotationToolbar() {
   const { activeAnnotationId, setFocusedId } = useActiveAnnotationId();
@@ -42,7 +41,7 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const commentButtonRef = useRef<HTMLButtonElement>(null);
-  const { contentRef, iframeRef, annotations, deleteAnnotation, setCurrentHighlightColor, updateAnnotation } = useAnnotationContext();
+  const { session, annotations, deleteAnnotation, setCurrentHighlightColor, updateAnnotation } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
   const { isCoarsePointer } = useCoarsePointer();
   const isResizeMode = overlay?.contextual.type === 'resize'
@@ -57,39 +56,18 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
   }, [showCommentInput]);
 
   const measureAnchor = useCallback(() => {
-    const iframeDoc = contentRef.current?.ownerDocument;
-    if (!activeAnnotationId || !iframeDoc) {
+    if (!activeAnnotationId) {
       setAnchorRect(null);
       return;
     }
 
-    try {
-      const rect = highlightBoundingRect(activeAnnotationId, iframeDoc);
-      const iframeBounds = iframeRef.current?.getBoundingClientRect();
-      const left = rect.left + (iframeBounds?.left ?? 0);
-      const top = rect.top + (iframeBounds?.top ?? 0);
-      const translated = new DOMRect(left, top, rect.width, rect.height);
-
-      if (iframeBounds && (
-        translated.bottom < iframeBounds.top ||
-        translated.top > iframeBounds.bottom ||
-        translated.right < iframeBounds.left ||
-        translated.left > iframeBounds.right
-      )) {
-        setAnchorRect(null);
-        return;
-      }
-
-      setAnchorRect(translated);
-    } catch {
-      setAnchorRect(null);
-    }
-  }, [contentRef, activeAnnotationId, iframeRef]);
+    setAnchorRect(session.getHighlightRect(activeAnnotationId));
+  }, [activeAnnotationId, session]);
 
   useEffect(() => {
-    const iframeWindow = iframeRef.current?.contentWindow;
-    const iframeDocument = iframeRef.current?.contentDocument;
-    const content = contentRef.current;
+    const iframeWindow = session.frame?.contentWindow;
+    const iframeDocument = session.document;
+    const content = session.root;
     const visualViewport = window.visualViewport;
     const animationFrame = window.requestAnimationFrame(measureAnchor);
     iframeWindow?.addEventListener('scroll', measureAnchor, { passive: true });
@@ -113,25 +91,13 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
       visualViewport?.removeEventListener('scroll', measureAnchor);
       resizeObserver?.disconnect();
     };
-  }, [contentRef, iframeRef, measureAnchor]);
+  }, [measureAnchor, session.document, session.frame, session.root]);
 
   const styles = useMenuOnFocusStyles(menuRef, anchorRect, textareaFocus, commentAnchor);
   const currentAnnotation = annotations.find((annotation) => annotation.id === activeAnnotationId);
 
   const handleColorSelect = (id: string, newColor: string) => {
-    if (!contentRef.current) return;
-
-    // Update all spans with this ID
-    const spans = contentRef.current.querySelectorAll<HTMLSpanElement>(
-      `span.highlighted-text[data-highlight-id="${id}"]`
-    );
-
-    spans.forEach((span) => {
-      span.style.backgroundColor = newColor;
-    });
-
-    // Notify parent of color change
-    updateAnnotation({ id, color: newColor });
+    void updateAnnotation({ id, color: newColor });
 
     // Update current highlight color for future highlights
     setCurrentHighlightColor(newColor);
