@@ -6,7 +6,7 @@ import { useAnnotationContext } from "../contexts/Annotator.context";
 import { useMobile, useHotkey, useClickOutside } from "../hooks";
 import { useResizablePanelWidth } from "../hooks/AnnotationsPanel.hooks";
 import AnnotationList from "./AnnotationList";
-import { BoxList, Sort, PasteHtml, Refresh, Times } from "../app/icons";
+import { BoxList, Sort, PasteHtml, ReadingMode, Refresh, Times } from "../app/icons";
 import { Badge } from "./design-system/badge";
 import { IconButton } from "./design-system/icon-button";
 import Dropdown from "./Dropdown";
@@ -251,6 +251,17 @@ export default function AnnotationsPanel({
 
               <div style={styles.toolbarActions}>
                 <Badge tone={syncTone} size="small" dot>{syncLabel}</Badge>
+                <IconButton
+                  label={session.readingMode ? 'Turn off reading mode' : 'Turn on reading mode'}
+                  title={session.readingMode ? 'Turn off reading mode' : 'Turn on reading mode'}
+                  size="small"
+                  tone={session.readingMode ? 'primary' : 'neutral'}
+                  aria-pressed={session.readingMode}
+                  disabled={!session.document || !session.root}
+                  onClick={() => session.setReadingMode(!session.readingMode)}
+                >
+                  <ReadingMode size={13} />
+                </IconButton>
                 {onPasteHtml && (
                   <IconButton
                     label="Paste page HTML"

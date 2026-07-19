@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { highlightBoundingRect, removeHighlights } from '../dom';
 import {
+  applyReadingMode,
   framePathFromUrl,
   prepareFrameDocument,
   startExternalLinkInterceptor,
@@ -50,6 +51,8 @@ export type AnnotationSession = {
   reloadFrame: () => Promise<void>;
   openInAnnotator: (href: string) => Promise<void>;
   openOriginal: (href: string) => void;
+  readingMode: boolean;
+  setReadingMode: (enabled: boolean) => void;
   applyAnnotations: (annotations: Annotation[]) => Promise<void>;
   removeHighlight: (id: string) => void;
   updateHighlightColor: (id: string, color: string) => void;
@@ -79,6 +82,7 @@ const EMPTY_SNAPSHOT: SessionSnapshot = {
 const MATCH_RETRY_DEBOUNCE_MS = 150;
 const MATCH_FINAL_IDLE_MS = 1500;
 const MATCH_MAX_DURATION_MS = 10000;
+const READING_MODE_STORAGE_KEY = 'anno.readingMode';
 const MATCH_MUTATION_ATTRIBUTES = ['class', 'style', 'hidden', 'aria-hidden', 'data-mathml'];
 const MEANINGFUL_MUTATION_ATTRIBUTES = new Set(MATCH_MUTATION_ATTRIBUTES);
 const ANNOTATOR_OWNED_SELECTOR = [
@@ -86,6 +90,16 @@ const ANNOTATOR_OWNED_SELECTOR = [
   'span.highlighted-text[data-highlight-id]',
 ].join(',');
 const NON_CONTENT_SELECTOR = 'script, style, noscript, template';
+
+function initialReadingMode(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    return window.localStorage.getItem(READING_MODE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 function elementForNode(node: Node): Element | null {
   return node.nodeType === Node.ELEMENT_NODE
@@ -177,9 +191,11 @@ export function useAnnotationSession({
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(EMPTY_SNAPSHOT);
   const [discoveredTitle, setDiscoveredTitle] = useState(initialTitle);
   const [loadedFrameSource, setLoadedFrameSource] = useState<{ requestUrl: string; sourceUrl: string } | null>(null);
+  const [readingMode, setReadingModeState] = useState(initialReadingMode);
   const attachedFrameRef = useRef<HTMLIFrameElement | null>(null);
   const frameLoadCleanupRef = useRef<(() => void) | null>(null);
   const documentCleanupRef = useRef<(() => void) | null>(null);
+  const readingModeCleanupRef = useRef<(() => void) | null>(null);
   const annotationMatchCleanupRef = useRef<(() => void) | null>(null);
   const annotationMatchIdRef = useRef(0);
   const frameLoadIdRef = useRef(0);
@@ -209,17 +225,50 @@ export function useAnnotationSession({
   const activeReady = hasCurrentFrameSource && snapshot.ready;
   const activeError = hasCurrentFrameSource ? snapshot.error : '';
 
+  const setReadingMode = useCallback((enabled: boolean) => {
+    setReadingModeState(enabled);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(READING_MODE_STORAGE_KEY, readingMode ? 'true' : 'false');
+    } catch {}
+  }, [readingMode]);
+
+  useEffect(() => {
+    readingModeCleanupRef.current?.();
+    readingModeCleanupRef.current = null;
+
+    if (!readingMode || !activeDocument || !activeRoot) return;
+
+    const cleanup = applyReadingMode(activeDocument, activeRoot);
+    readingModeCleanupRef.current = cleanup;
+
+    return () => {
+      if (readingModeCleanupRef.current === cleanup) {
+        readingModeCleanupRef.current = null;
+        cleanup();
+      }
+    };
+  }, [activeDocument, activeRoot, readingMode]);
+
   const disposeAnnotationMatching = useCallback(() => {
     annotationMatchIdRef.current++;
     annotationMatchCleanupRef.current?.();
     annotationMatchCleanupRef.current = null;
   }, []);
 
+  const disposeReadingMode = useCallback(() => {
+    readingModeCleanupRef.current?.();
+    readingModeCleanupRef.current = null;
+  }, []);
+
   const disposeDocumentSession = useCallback(() => {
     disposeAnnotationMatching();
+    disposeReadingMode();
     documentCleanupRef.current?.();
     documentCleanupRef.current = null;
-  }, [disposeAnnotationMatching]);
+  }, [disposeAnnotationMatching, disposeReadingMode]);
 
   const clearDocumentSnapshot = useCallback((error = '') => {
     disposeDocumentSession();
@@ -635,6 +684,8 @@ export function useAnnotationSession({
     reloadFrame,
     openInAnnotator,
     openOriginal,
+    readingMode,
+    setReadingMode,
     applyAnnotations,
     removeHighlight,
     updateHighlightColor,
@@ -654,6 +705,8 @@ export function useAnnotationSession({
     reloadFrame,
     openInAnnotator,
     openOriginal,
+    readingMode,
+    setReadingMode,
     applyAnnotations,
     removeHighlight,
     updateHighlightColor,

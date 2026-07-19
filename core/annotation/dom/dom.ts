@@ -187,8 +187,7 @@ export function rangeToHtml(range: Range | null): string {
  * This is useful to locate a content node that is not merely a wrapper
  * composed mostly of a single child block.
  */
-export function findBestContentNode(root: HTMLElement, threshold: number = 0.9, minTotal: number = 20): HTMLElement {
-  const annotationHighlightSelector = 'span.highlighted-text[data-highlight-id]';
+export function findBestContentNode(root: HTMLElement, threshold: number = 0.8, minTotal: number = 20): HTMLElement {
 
   function nodeTextLen(n: Node | null): number {
     if (!n) return 0;
@@ -199,16 +198,14 @@ export function findBestContentNode(root: HTMLElement, threshold: number = 0.9, 
   let current: HTMLElement = root;
 
   while (true) {
-    const currentTotal = nodeTextLen(current);
-    if (currentTotal < minTotal) return current;
+    const currentTextLen = nodeTextLen(current);
+    if (currentTextLen < minTotal) return current;
 
     // Look through all children to find one that accounts for >threshold of parent's text
     let dominantChild: HTMLElement | null = null;
-    for (let child = current.firstElementChild; child; child = child.nextElementSibling) {
-      if (child.matches(annotationHighlightSelector)) continue;
-
-      const childTotal = nodeTextLen(child);
-      if (currentTotal > 0 && (childTotal / currentTotal) > threshold) {
+    for (const child of Array.from(current.children)) {
+      const childTextLen = nodeTextLen(child);
+      if (currentTextLen > 0 && (childTextLen / currentTextLen) > threshold) {
         dominantChild = child as HTMLElement;
         break;
       }
