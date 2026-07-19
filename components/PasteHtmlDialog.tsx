@@ -8,14 +8,14 @@ import pasteHtmlStyles from './styles/PasteHTML.styles';
 
 type Props = {
   error?: string;
-  site: string;
+  siteId: string;
   /** path without leading slash, e.g. "article/10.1007/s11098-025-02457-y" */
   path: string;
   onSuccess: () => void;
   onClose: () => void;
 };
 
-export default function PasteHtmlDialog({ error, site, path, onSuccess, onClose }: Props) {
+export default function PasteHtmlDialog({ error, siteId, path, onSuccess, onClose }: Props) {
   const [html, setHtml] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -29,11 +29,11 @@ export default function PasteHtmlDialog({ error, site, path, onSuccess, onClose 
       const res = await fetch('/api/webpages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site, path, html: trimmed }),
+        body: JSON.stringify({ site: siteId, path, html: trimmed }),
       });
       if (!res.ok) {
-        const data = await res.json() as { error?: string };
-        setSaveError(data.error ?? `HTTP ${res.status}`);
+        const data = await res.json().catch(() => null) as { error?: string } | null;
+        setSaveError(data?.error ?? `HTTP ${res.status}`);
         return;
       }
       onSuccess();

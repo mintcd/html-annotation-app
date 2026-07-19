@@ -21,6 +21,11 @@ interface R2ObjectBodyBinding {
 
 interface R2BucketBinding {
   get(key: string): Promise<R2ObjectBodyBinding | null>;
+  put(
+    key: string,
+    value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+    options?: { httpMetadata?: { contentType?: string } },
+  ): Promise<unknown>;
 }
 
 export interface Env {

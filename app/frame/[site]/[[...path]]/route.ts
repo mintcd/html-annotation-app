@@ -9,6 +9,7 @@
 
 import * as cheerio from 'cheerio';
 import { getEnv } from '@/core/utils/env';
+import { webpageStorageKey } from '@/core/frame/pastedHtml';
 import { syncSessionFromRequest } from '@/core/persistence/syncIdentity';
 import {
   findSyncStateRow,
@@ -53,49 +54,6 @@ function isJsonOnly(text: string): boolean {
   return false;
 }
 
-/**
- * Content script injected into stored/pasted HTML.
- * Unlike the proxy variant, this one rewrites root-relative fetch()/XHR
- * directly to the original site origin rather than routing through /proxy.
- * HTML-level attributes (src/href) are handled by a <base> tag instead.
- */
-function contentScriptDirect(origin: string): string {
-  return (
-    `<script data-proxy-injected="1">(function(){
-  var origin=${JSON.stringify(origin)};
-  var BLOCKED=${JSON.stringify(BLOCKED_SCRIPT_HOSTS)};
-  function isBlocked(u){try{var h=new URL(u).hostname;return BLOCKED.some(function(d){return h===d||h.endsWith('.'+d);});}catch(e){return false;}}
-  function rw(u){
-    if(!u||typeof u!=='string')return u;
-    if(u.startsWith('/')&&!u.startsWith('//')&&!u.startsWith('/_next/')&&!u.startsWith('/api/'))
-      return origin+u;
-    return u;
-  }
-  // Block analytics scripts that sneak in dynamically
-  var sDesc=Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype,'src');
-  if(sDesc&&sDesc.set){
-    Object.defineProperty(HTMLScriptElement.prototype,'src',{get:sDesc.get,set:function(v){
-      if(typeof v==='string'&&isBlocked(v)){this.type='javascript/blocked';return;}
-      sDesc.set.call(this,v);
-    },configurable:true});
-  }
-  // Rewrite root-relative fetch/XHR to original origin
-  var origFetch=window.fetch;
-  window.fetch=function(input,init){
-    if(typeof input==='string')input=rw(input);
-    else if(input&&typeof input==='object'&&input.url){var u=rw(input.url);if(u!==input.url)input=new Request(u,input);}
-    return origFetch.call(this,input,init);
-  };
-  var origOpen=XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open=function(method,url){
-    if(typeof url==='string')url=rw(url);
-    return origOpen.apply(this,[method,url].concat(Array.prototype.slice.call(arguments,2)));
-  };
-})();
-</script>`
-  );
-}
-
 async function fetchWithCookies(
   url: string,
   headers: Record<string, string>,
@@ -136,6 +94,52 @@ function frameErrorResponse(message: string): Response {
   });
 }
 
+function isExecutableScriptType(type: string): boolean {
+  const normalized = type.trim().toLowerCase();
+  return normalized === ''
+    || normalized === 'module'
+    || normalized === 'text/javascript'
+    || normalized === 'application/javascript'
+    || normalized === 'text/ecmascript'
+    || normalized === 'application/ecmascript'
+    || normalized === 'importmap'
+    || normalized === 'speculationrules'
+    || normalized.includes('javascript')
+    || normalized.endsWith('/ecmascript');
+}
+
+function disableStoredHtmlExecution($: cheerio.CheerioAPI): void {
+  $('meta[http-equiv="refresh"]').remove();
+
+  $('script').each((_, el) => {
+    const type = $(el).attr('type') || '';
+    if (!isExecutableScriptType(type)) return;
+
+    const src = $(el).attr('src');
+    if (src) $(el).attr('data-annotation-original-src', src);
+    $(el)
+      .removeAttr('src')
+      .attr('type', 'application/x-annotation-disabled-script')
+      .text('');
+  });
+
+  $('iframe').each((_, el) => {
+    $(el).attr('sandbox', '');
+    if ($(el).attr('srcdoc')) {
+      $(el)
+        .attr('data-annotation-original-srcdoc', '')
+        .removeAttr('srcdoc');
+    }
+  });
+
+  $('*').each((_, el) => {
+    const attribs = (el as { attribs?: Record<string, string> }).attribs ?? {};
+    for (const name of Object.keys(attribs)) {
+      if (/^on/i.test(name)) $(el).removeAttr(name);
+    }
+  });
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { site: string; path?: string[] } }
@@ -168,7 +172,7 @@ export async function GET(
     siteOrigin = row.origin;
 
     // ── Check R2 bucket for user-pasted HTML ───────────────────────────
-    const r2Key = path?.length ? `${site}/${path.join('/')}` : site;
+    const r2Key = webpageStorageKey(site, path);
     const stored = await env.WEBPAGES_BUCKET.get(r2Key);
     if (stored) storedHtml = await stored.text();
   } catch {
@@ -221,20 +225,18 @@ export async function GET(
     }
   }
 
-  // ── 3. Stored HTML: serve with <base> tag, skip proxy rewriting ──────────
+  // ── 3. Stored HTML: serve static markup with <base>, skip proxy rewriting ─
   // Assets load directly from the original site in the user's browser.
   // This avoids Akamai/bot-protection blocking our server-side proxy requests.
   if (storedHtml) {
     const $s = cheerio.load(html);
     $s('meta[http-equiv="Content-Security-Policy"]').remove();
     $s('meta[http-equiv="X-Frame-Options"]').remove();
+    disableStoredHtmlExecution($s);
     // Remove existing base tag so ours takes precedence
     $s('base').remove();
-    // Inject base tag + direct content script
-    $s('head').prepend(
-      `<base href=${JSON.stringify(targetUrl)}>` +
-      contentScriptDirect(siteOrigin)
-    );
+    // Inject base tag so relative assets still resolve against the source page.
+    $s('head').prepend(`<base href=${JSON.stringify(targetUrl)}>`);
     return new Response($s.html(), {
       status: 200,
       headers: {

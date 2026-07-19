@@ -13,11 +13,15 @@ import {
 type SitePageClientProps = {
   pageUrl: string;
   proxiedUrl: string;
+  frameSiteId: string;
+  frameStoragePath: string;
 };
 
 export default function SitePageClient({
   pageUrl,
   proxiedUrl,
+  frameSiteId,
+  frameStoragePath,
 }: SitePageClientProps) {
   const sync = useSyncStatus();
   const runtime = useSyncRuntime();
@@ -59,7 +63,15 @@ export default function SitePageClient({
 
   if (!pageRow) return <Loader />;
 
-  return <Annotator pageId={String(pageRow.id)} pageUrl={pageUrl} iframeUrl={proxiedUrl} />;
+  return (
+    <Annotator
+      pageId={String(pageRow.id)}
+      pageUrl={pageUrl}
+      iframeUrl={proxiedUrl}
+      frameSiteId={frameSiteId}
+      frameStoragePath={frameStoragePath}
+    />
+  );
 }
 
 function PageError({ message }: { message: string }) {

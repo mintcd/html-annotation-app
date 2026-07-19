@@ -15,6 +15,7 @@ const COOKIE_BANNER_SELECTORS = [
   '.cookie-consent',
   '.cookie-overlay',
 ];
+const FRAME_CLEANUP_DEBOUNCE_MS = 250;
 
 export type PreparedFrameDocument = {
   document: Document;
@@ -128,14 +129,28 @@ function cleanupFrameDocument(doc: Document, target: Element | Document) {
 }
 
 function startFrameDocumentPostprocessing(doc: Document, target: HTMLElement): () => void {
-  cleanupFrameDocument(doc, target);
-
   let cleaning = false;
-  const observer = new MutationObserver(() => {
+  let cleanupTimer: number | null = null;
+
+  const runCleanup = () => {
     if (cleaning) return;
     cleaning = true;
     cleanupFrameDocument(doc, target);
     cleaning = false;
+  };
+
+  const scheduleCleanup = () => {
+    if (cleaning || cleanupTimer !== null) return;
+    cleanupTimer = window.setTimeout(() => {
+      cleanupTimer = null;
+      runCleanup();
+    }, FRAME_CLEANUP_DEBOUNCE_MS);
+  };
+
+  runCleanup();
+
+  const observer = new MutationObserver(() => {
+    scheduleCleanup();
   });
 
   try {
@@ -145,11 +160,12 @@ function startFrameDocumentPostprocessing(doc: Document, target: HTMLElement): (
   }
 
   const timeouts = [200, 800, 2000].map((delay) => (
-    window.setTimeout(() => cleanupFrameDocument(doc, target), delay)
+    window.setTimeout(runCleanup, delay)
   ));
 
   return () => {
     observer.disconnect();
+    if (cleanupTimer !== null) window.clearTimeout(cleanupTimer);
     timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
   };
 }

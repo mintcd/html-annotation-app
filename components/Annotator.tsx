@@ -28,6 +28,8 @@ export type AnnotatorProps = {
   pageId: string;
   pageUrl: string;
   iframeUrl: string;
+  frameSiteId: string;
+  frameStoragePath: string;
   initialAnnotations?: Annotation[];
   initialTitle?: string;
 };
@@ -45,6 +47,8 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
     pageId,
     pageUrl,
     iframeUrl,
+    frameSiteId,
+    frameStoragePath,
     initialAnnotations,
     initialTitle,
   } = props;
@@ -61,7 +65,6 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
     ready,
     error,
     title,
-    framePath,
     frameSourceUrl,
     reportFrameError,
     reloadFrame,
@@ -164,8 +167,8 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
               <OverlayFocusScope>
                 <PasteHtmlDialog
                   error={overlay.dialog.type === 'pasteHtml' ? overlay.dialog.error : error}
-                  site={pageUrl}
-                  path={framePath}
+                  siteId={frameSiteId}
+                  path={frameStoragePath}
                   onSuccess={() => {
                     overlay.closeDialog();
                     void reloadFrame();

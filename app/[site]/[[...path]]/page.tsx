@@ -76,7 +76,13 @@ async function resolveAnnotatorRoute({
   path?: string[];
   search: string;
 }): Promise<
-  | { ok: true; pageUrl: string; proxiedUrl: string }
+  | {
+      ok: true;
+      pageUrl: string;
+      proxiedUrl: string;
+      frameSiteId: string;
+      frameStoragePath: string;
+    }
   | { ok: false; message: string }
 > {
   const requestHeaders = await headers();
@@ -102,11 +108,14 @@ async function resolveAnnotatorRoute({
     const targetUrl = new URL(`${pathResult.pathname}${search}`, origin);
     const pageUrl = new URL(normalizeUrl(targetUrl.href));
     const framePath = pageUrl.pathname === "/" ? "" : pageUrl.pathname;
+    const frameStoragePath = path?.length ? path.join("/") : "";
 
     return {
       ok: true,
       pageUrl: pageUrl.href,
       proxiedUrl: `/frame/${encodeURIComponent(siteId)}${framePath}${pageUrl.search}`,
+      frameSiteId: siteId,
+      frameStoragePath,
     };
   } catch {
     return { ok: false, message: "The requested page URL is invalid." };
@@ -138,6 +147,8 @@ export default async function SitePage({
     <SitePageClient
       pageUrl={resolvedRoute.pageUrl}
       proxiedUrl={resolvedRoute.proxiedUrl}
+      frameSiteId={resolvedRoute.frameSiteId}
+      frameStoragePath={resolvedRoute.frameStoragePath}
     />
   );
 }
