@@ -882,6 +882,7 @@ function wrapNodes(nodes: Node[], color: string, id: string) {
   wrapper.className = 'highlighted-text';
   wrapper.dataset.highlightId = id;
   wrapper.style.backgroundColor = color;
+  wrapper.style.setProperty('--highlight-color', color);
 
   parent.insertBefore(wrapper, first);
 

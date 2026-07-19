@@ -45,7 +45,9 @@ export async function prepareFrameDocument(iframe: HTMLIFrameElement): Promise<P
     style.textContent = `
       .highlighted-text {
         cursor: pointer;
-        padding-inline: 1px;
+        box-shadow:
+          -1px 0 0 var(--highlight-color, currentColor),
+          1px 0 0 var(--highlight-color, currentColor);
         border-radius: 2px;
       }
     `;

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import ColorPicker from "./ColorPicker";
 import { useAnnotationContext } from "../contexts/Annotator.context";
 import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.context";
-import { useActiveAnnotationId } from "../hooks/MenuOnFocus.hooks";
+import { useActiveAnnotationId } from "../hooks/FocusedAnnotationToolbar.hooks";
 import { useCoarsePointer } from "../hooks";
 import { Delete, Highlighter, Comment, Resize, Send } from "../app/icons";
 import { IconButton } from "./design-system/icon-button";

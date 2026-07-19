@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { Highlighter } from "../app/icons";
 import { Button } from "./design-system/button";
-import { useAnnotationSelection } from "../hooks/MenuOnRange.hooks";
+import { useAnnotationSelection } from "../hooks/SelectionToolbar.hooks";
 import useMenuStyles from "./styles/MenuOnRange.styles";
 import { useAnnotationContext } from "../contexts/Annotator.context";
 

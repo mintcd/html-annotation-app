@@ -13,8 +13,9 @@ body {
 
 .highlighted-text {
   cursor: pointer;
-  padding-left: 2px;
-  padding-right: 1px;
+  box-shadow:
+    -2px 0 0 var(--highlight-color, currentColor),
+    1px 0 0 var(--highlight-color, currentColor);
   border-radius: 3px;
 }
 
