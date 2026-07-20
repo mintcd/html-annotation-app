@@ -1,5 +1,5 @@
 [submodule "design-system"]
-	path = design-system
+	path = components/design-system
 	url = https://github.com/mintcd/design-system.git
 [submodule "hooks"]
 	path = hooks
