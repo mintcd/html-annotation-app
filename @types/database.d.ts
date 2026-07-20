@@ -25,6 +25,11 @@ type PageNote = {
   updated_at: string;
 }
 
+type HighlightColor = {
+  color: string;
+  semantics: string;
+}
+
 type TextAnchor = {
   version: 1;
   start: number;

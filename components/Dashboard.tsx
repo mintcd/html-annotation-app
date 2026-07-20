@@ -32,9 +32,13 @@ import {
   updateWebsiteRow,
   upsertPageNoteRow,
   type AppSyncRuntime,
+  deleteHighlightColorRow,
   useSyncRows,
+  useHighlightColors,
   useSyncRuntime,
   useSyncStatus,
+  normalizeHexColor,
+  upsertHighlightColorRow,
 } from '../core/persistence';
 import { deleteFrameBundle, ensureFrameCacheReady } from '../core/frame/cache';
 
@@ -243,6 +247,7 @@ function AuthenticatedDashboard() {
   const annotations = useSyncRows('annotations');
   const pageNotes = useSyncRows('page_notes');
   const websites = useSyncRows('websites');
+  const highlightColors = useHighlightColors();
   const [siteMetadataByOrigin, setSiteMetadataByOrigin] = useState<Record<string, SiteMetadata>>({});
   const metadataOriginsRef = useRef<Set<string>>(new Set());
 
@@ -336,7 +341,7 @@ function AuthenticatedDashboard() {
     }).sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
   }, [annotations.data, pageNotes.data, pages.data, siteMetadataByOrigin, websitesByOrigin]);
 
-  const dataError = pages.error || annotations.error || pageNotes.error || websites.error;
+  const dataError = pages.error || annotations.error || pageNotes.error || websites.error || highlightColors.error;
 
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
   const [editingComment, setEditingComment] = useState<EditingCommentState | null>(null);
@@ -548,6 +553,27 @@ function AuthenticatedDashboard() {
     }, runtime);
   }
 
+  async function saveHighlightColor(input: HighlightColor, previousColor?: string) {
+    const color = normalizeHexColor(input.color);
+    const semantics = input.semantics.trim();
+    if (!color) throw new Error('Enter a valid hex color.');
+    if (!semantics) throw new Error('Enter color semantics.');
+
+    await upsertHighlightColorRow({ color, semantics }, runtime, {
+      flush: previousColor && previousColor !== color ? 'none' : 'await',
+    });
+    if (previousColor && previousColor !== color) {
+      await deleteHighlightColorRow(previousColor, runtime, { flush: 'await' });
+    }
+  }
+
+  async function deleteHighlightColor(color: string) {
+    if (highlightColors.data.length <= 1) {
+      throw new Error('Keep at least one highlight color.');
+    }
+    await deleteHighlightColorRow(color, runtime, { flush: 'await' });
+  }
+
   async function saveAndNavigateToPage(rawUrl: string) {
     try {
       const absoluteUrl = toAbsoluteUrl(rawUrl);
@@ -635,7 +661,7 @@ function AuthenticatedDashboard() {
             totalAnnotations={totalAnnotations}
             totalUrls={totalUrls}
             searchQuery={searchQuery}
-            loading={pages.loading || annotations.loading || pageNotes.loading || websites.loading}
+            loading={pages.loading || annotations.loading || pageNotes.loading || websites.loading || highlightColors.loading}
             enterUrl={enterUrl}
             searchInputRef={searchInputRef}
             syncStatus={syncStatus}
@@ -643,10 +669,15 @@ function AuthenticatedDashboard() {
             accountLabel={sync.session.username ?? String(sync.session.userId)}
             signingOut={signingOut}
             signOutError={signOutError}
+            highlightColors={highlightColors.data}
+            highlightColorsLoading={highlightColors.loading}
+            highlightColorError={highlightColors.error ?? null}
             onAnnotateSubmit={handleAnnotateSubmit}
             onEnterUrlChange={setEnterUrl}
             onSearchQueryChange={setSearchQuery}
             onSignOut={() => void signOut()}
+            onSaveHighlightColor={saveHighlightColor}
+            onDeleteHighlightColor={deleteHighlightColor}
             onSelectPage={(normalizedUrl) => {
               setSelectedUrl(normalizedUrl);
             }}

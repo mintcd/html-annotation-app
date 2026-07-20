@@ -1,7 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Button } from "./design-system/button";
+import TextEditor from "./text-editor";
 import { Save, Times } from "../app/icons";
 import styles from "./styles/PageNoteEditor.styles";
 
@@ -21,12 +31,16 @@ export default function PageNoteEditor({
   const savedContent = note?.content ?? "";
   const [baseline, setBaseline] = useState(savedContent);
   const [draft, setDraft] = useState(savedContent);
-  const [focused, setFocused] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [active, setActive] = useState(false);
+  const [initialCaretPoint, setInitialCaretPoint] = useState<{ x: number; y: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const dirty = draft !== baseline;
   const dirtyRef = useRef(dirty);
+  const pendingCaretPointRef = useRef<{ x: number; y: number } | null>(null);
+  const editorDisabled = disabled || saving;
 
   useEffect(() => {
     dirtyRef.current = dirty;
@@ -36,11 +50,17 @@ export default function PageNoteEditor({
     setBaseline(savedContent);
     if (!dirtyRef.current) {
       setDraft(savedContent);
+      setEditing(false);
+      setActive(false);
+      setInitialCaretPoint(null);
     }
   }, [savedContent]);
 
   const resetDraft = useCallback(() => {
     setDraft(baseline);
+    setEditing(false);
+    setActive(false);
+    setInitialCaretPoint(null);
     setSaveError(null);
     setSaved(false);
   }, [baseline]);
@@ -68,6 +88,63 @@ export default function PageNoteEditor({
     }
   }, [dirty, disabled, draft, onSave, saving]);
 
+  const startEditing = useCallback((opts?: { initialCaretPoint?: { x: number; y: number } }) => {
+    if (editorDisabled) return;
+
+    setEditing(true);
+    setActive(true);
+    setInitialCaretPoint(opts?.initialCaretPoint ?? null);
+  }, [editorDisabled]);
+
+  const handleEditorChange = useCallback((text: string) => {
+    setDraft(text);
+    setSaveError(null);
+    setSaved(false);
+  }, []);
+
+  const handleEditorBlur = useCallback((text: string) => {
+    setDraft(text);
+    setEditing(false);
+    setActive(false);
+    setInitialCaretPoint(null);
+  }, []);
+
+  const handleSurfaceClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (editing || editorDisabled) return;
+    startEditing({ initialCaretPoint: { x: event.clientX, y: event.clientY } });
+  }, [editing, editorDisabled, startEditing]);
+
+  const handleSurfacePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (editorDisabled) return;
+    pendingCaretPointRef.current = { x: event.clientX, y: event.clientY };
+  }, [editorDisabled]);
+
+  const handleSurfaceFocus = useCallback((event: ReactFocusEvent<HTMLDivElement>) => {
+    setActive(true);
+    if (event.target !== event.currentTarget || editing || editorDisabled) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const fallbackCaretPoint = { x: rect.left + 12, y: rect.top + 12 };
+    startEditing({ initialCaretPoint: pendingCaretPointRef.current ?? fallbackCaretPoint });
+    pendingCaretPointRef.current = null;
+  }, [editing, editorDisabled, startEditing]);
+
+  const handleSurfaceBlur = useCallback((event: ReactFocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    if (!editing) setActive(false);
+  }, [editing]);
+
+  const handleEditorKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      void saveNote();
+    } else if (event.key === "Escape" && dirty) {
+      event.preventDefault();
+      resetDraft();
+    }
+  }, [dirty, resetDraft, saveNote]);
+
   const status = saveError
     ? { label: saveError, tone: "danger" as const }
     : saving
@@ -77,13 +154,14 @@ export default function PageNoteEditor({
         : saved
           ? { label: "Saved", tone: "success" as const }
           : null;
+  const labelId = `page-note-label-${mode}`;
 
   return (
     <section style={styles.section(mode)} aria-label="Page note">
       <div style={styles.header}>
-        <label style={styles.label} htmlFor={`page-note-${mode}`}>
+        <span id={labelId} style={styles.label}>
           Page note
-        </label>
+        </span>
         {status && (
           <span
             style={styles.status(status.tone)}
@@ -94,30 +172,35 @@ export default function PageNoteEditor({
         )}
       </div>
 
-      <textarea
-        id={`page-note-${mode}`}
-        value={draft}
-        disabled={disabled || saving}
-        placeholder="Add a note for this page..."
-        rows={mode === "compact" ? 4 : 6}
-        style={styles.textarea(mode, focused)}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          setSaveError(null);
-          setSaved(false);
-        }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-            event.preventDefault();
-            void saveNote();
-          } else if (event.key === "Escape" && dirty) {
-            event.preventDefault();
-            resetDraft();
-          }
-        }}
-      />
+      <div
+        className="page-note-editor-surface"
+        style={styles.editorSurface(mode, active, editorDisabled)}
+        role="textbox"
+        aria-labelledby={labelId}
+        aria-multiline="true"
+        aria-disabled={editorDisabled || undefined}
+        tabIndex={editorDisabled ? -1 : 0}
+        onPointerDown={handleSurfacePointerDown}
+        onClick={handleSurfaceClick}
+        onFocus={handleSurfaceFocus}
+        onBlur={handleSurfaceBlur}
+        onKeyDown={handleEditorKeyDown}
+      >
+        <TextEditor
+          value={draft}
+          onChange={handleEditorChange}
+          onBlur={handleEditorBlur}
+          initialCaretPoint={initialCaretPoint}
+          onInitialCaretAssigned={() => setInitialCaretPoint(null)}
+          isEditing={editing && !editorDisabled}
+          onStartEditing={editorDisabled ? undefined : startEditing}
+          preserveHeightOnEdit
+        >
+          {draft ? undefined : (
+            <span style={styles.placeholder}>Add a note for this page...</span>
+          )}
+        </TextEditor>
+      </div>
 
       {dirty && (
         <div style={styles.actions}>

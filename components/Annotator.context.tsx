@@ -11,7 +11,13 @@ import {
   type ReactNode,
 } from "react";
 import type { AnnotationSession } from "../core/annotation/session/useAnnotationSession";
-import { useSyncRows, useSyncRuntime, useSyncStatus } from "../core/persistence";
+import {
+  FALLBACK_HIGHLIGHT_COLOR,
+  useHighlightColors,
+  useSyncRows,
+  useSyncRuntime,
+  useSyncStatus,
+} from "../core/persistence";
 import {
   createAnnotationRow,
   deleteAnnotationRow,
@@ -46,6 +52,7 @@ type AnnotationContextType = {
   pageNote: PageNote | null;
   pageUrl?: string;
   title?: string;
+  highlightColors: HighlightColor[];
   currentHighlightColor: string;
   setCurrentHighlightColor: React.Dispatch<React.SetStateAction<string>>;
   addAnnotation: (payload: { text: string; html: string; color: string; position: TextAnchor }) => Promise<Annotation>;
@@ -79,7 +86,7 @@ export function AnnotationContext({
   pageUrl,
   session,
 }: AnnotationContextProps) {
-  const [currentHighlightColor, setCurrentHighlightColor] = useState<string>("#87ceeb");
+  const [currentHighlightColor, setCurrentHighlightColor] = useState<string>(FALLBACK_HIGHLIGHT_COLOR);
   const [lastAutoSaveStatus, setLastAutoSaveStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [initialMatchingComplete, setInitialMatchingComplete] = useState(false);
   const initialHighlightsApplied = useRef(false);
@@ -88,6 +95,7 @@ export function AnnotationContext({
   const runtime = useSyncRuntime();
   const liveAnnotations = useSyncRows('annotations');
   const livePageNotes = useSyncRows('page_notes');
+  const highlightColors = useHighlightColors();
 
   const sourceAnnotations = useMemo(
     () => liveAnnotations.data
@@ -111,6 +119,15 @@ export function AnnotationContext({
   useEffect(() => {
     setAnnotations(sourceAnnotations);
   }, [sourceAnnotations]);
+
+  useEffect(() => {
+    if (
+      highlightColors.data.length > 0
+      && !highlightColors.data.some((color) => color.color === currentHighlightColor)
+    ) {
+      setCurrentHighlightColor(highlightColors.data[0]?.color ?? FALLBACK_HIGHLIGHT_COLOR);
+    }
+  }, [currentHighlightColor, highlightColors.data]);
 
   useEffect(() => {
     if (!session.ready) {
@@ -267,6 +284,7 @@ export function AnnotationContext({
     pageNote,
     pageUrl,
     title: contentSession.title,
+    highlightColors: highlightColors.data,
     currentHighlightColor,
     setCurrentHighlightColor,
     addAnnotation,
@@ -275,7 +293,7 @@ export function AnnotationContext({
     updatePageNote,
     syncStatus,
     lastAutoSaveStatus,
-  }), [contentSession, annotations, pageUrl, currentHighlightColor,
+  }), [contentSession, annotations, pageUrl, highlightColors.data, currentHighlightColor,
     setCurrentHighlightColor, addAnnotation, deleteAnnotation, updateAnnotation,
     updatePageNote, pageNote, syncStatus, lastAutoSaveStatus]);
 

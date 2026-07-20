@@ -8,6 +8,7 @@ import { Delete, Highlighter, Comment, Resize, Send } from "../app/icons";
 import { IconButton } from "./design-system/icon-button";
 import useMenuOnFocusStyles from "./styles/MenuOnFocus.styles";
 import AnnotationResizeHandles from "./AnnotationResizeHandles";
+import { FALLBACK_HIGHLIGHT_COLOR } from "@/core/persistence";
 
 export default function FocusedAnnotationToolbar() {
   const { activeAnnotationId, setFocusedId } = useActiveAnnotationId();
@@ -40,7 +41,14 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const commentButtonRef = useRef<HTMLButtonElement>(null);
-  const { session, annotations, deleteAnnotation, setCurrentHighlightColor, updateAnnotation } = useAnnotationContext();
+  const {
+    session,
+    annotations,
+    deleteAnnotation,
+    highlightColors,
+    setCurrentHighlightColor,
+    updateAnnotation,
+  } = useAnnotationContext();
   const overlay = useAnnotatorOverlayOptional();
   const { isCoarsePointer } = useCoarsePointer();
   const isResizeMode = overlay?.contextual.type === 'resize'
@@ -108,6 +116,7 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
 
   function handleChangeStyle(e: React.MouseEvent<HTMLButtonElement>) {
     if (!activeAnnotationId) return;
+    if (highlightColors.length === 0) return;
     setShowCommentInput(false);
     setColorPickerAnchor(e.currentTarget.getBoundingClientRect());
     setShowColorPicker(true);
@@ -193,13 +202,14 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
                 label="Change highlight color"
                 size={styles.controlSize}
                 tone="neutral"
+                disabled={highlightColors.length === 0}
                 aria-expanded={showColorPicker}
                 tabIndex={toolbarFocusIndex === 1 ? 0 : -1}
                 onFocus={() => setToolbarFocusIndex(1)}
                 onClick={handleChangeStyle}
                 title="Change highlight color"
               >
-                <span style={styles.highlightIcon(currentAnnotation?.color || "#87ceeb")}>
+                <span style={styles.highlightIcon(currentAnnotation?.color || highlightColors[0]?.color || FALLBACK_HIGHLIGHT_COLOR)}>
                   <Highlighter size={18} aria-hidden="true" />
                 </span>
               </IconButton>
@@ -243,6 +253,7 @@ function FocusedHighlightMenu({ activeAnnotationId, setFocusedId }: FocusedHighl
 
           {showColorPicker && (
             <ColorPicker
+              colors={highlightColors}
               currentColor={annotations.find(a => a.id === activeAnnotationId)?.color}
               onColorSelect={(color) => handleColorSelect(activeAnnotationId, color)}
               onClose={closeColorPicker}

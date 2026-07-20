@@ -5,6 +5,7 @@ import colorPickerStyles from "./styles/ColorPicker.styles";
 import { useAnnotationContextOptional } from "./Annotator.context";
 
 type ColorPickerProps = {
+  colors: readonly HighlightColor[];
   onColorSelect: (color: string) => void;
   onClose: () => void;
   currentColor?: string;
@@ -21,14 +22,8 @@ type ColorPickerProps = {
   anchorId?: string | null;
 };
 
-const HIGHLIGHT_COLORS = [
-  { name: "Blue", value: "#87ceeb" },
-  { name: "Green", value: "#90ee90" },
-  { name: "Red", value: "#ff6b6b" },
-  { name: "Gray", value: "#d3d3d3" },
-];
-
 export default function ColorPicker({
+  colors,
   onColorSelect,
   onClose,
   currentColor,
@@ -48,31 +43,33 @@ export default function ColorPicker({
 
   useEffect(() => {
     previouslyFocused.current = document.activeElement as HTMLElement | null;
-    const selectedIndex = Math.max(0, HIGHLIGHT_COLORS.findIndex((color) => color.value === currentColor));
+    const selectedIndex = Math.max(0, colors.findIndex((color) => color.color === currentColor));
     const frame = window.requestAnimationFrame(() => colorButtonRefs.current[selectedIndex]?.focus());
 
     return () => {
       window.cancelAnimationFrame(frame);
       if (previouslyFocused.current?.isConnected) previouslyFocused.current.focus();
     };
-  }, [currentColor]);
+  }, [currentColor, colors]);
 
   useHotkey((e) => e.key === 'Escape', onClose);
 
   const handleColorKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (colors.length === 0) return;
+
     let nextIndex: number | null = null;
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      nextIndex = (index + 1) % HIGHLIGHT_COLORS.length;
+      nextIndex = (index + 1) % colors.length;
     } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-      nextIndex = (index - 1 + HIGHLIGHT_COLORS.length) % HIGHLIGHT_COLORS.length;
+      nextIndex = (index - 1 + colors.length) % colors.length;
     } else if (event.key === 'Home') {
       nextIndex = 0;
     } else if (event.key === 'End') {
-      nextIndex = HIGHLIGHT_COLORS.length - 1;
+      nextIndex = colors.length - 1;
     } else if (event.key === 'Tab') {
       nextIndex = event.shiftKey
-        ? (index - 1 + HIGHLIGHT_COLORS.length) % HIGHLIGHT_COLORS.length
-        : (index + 1) % HIGHLIGHT_COLORS.length;
+        ? (index - 1 + colors.length) % colors.length
+        : (index + 1) % colors.length;
     }
 
     if (nextIndex !== null) {
@@ -101,32 +98,37 @@ export default function ColorPicker({
           <span id="highlight-color-title" style={colorPickerStyles.title}>Highlight color</span>
           <span style={colorPickerStyles.hint}>Choose a color</span>
         </div>
-        <div role="radiogroup" aria-label="Highlight colors" style={colorPickerStyles.colorGrid}>
-          {HIGHLIGHT_COLORS.map((color, index) => {
-            const isSelected = currentColor === color.value;
-            return (
-              <button
-                ref={(element) => { colorButtonRefs.current[index] = element; }}
-                key={color.value}
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                tabIndex={isSelected || (!currentColor && index === 0) ? 0 : -1}
-                onClick={() => onColorSelect(color.value)}
-                onKeyDown={(event) => handleColorKeyDown(event, index)}
-                onPointerEnter={() => setActiveColor(color.value)}
-                onPointerLeave={() => setActiveColor(null)}
-                onFocus={() => setActiveColor(color.value)}
-                onBlur={() => setActiveColor(null)}
-                title={`${color.name} highlight`}
-                style={colorPickerStyles.colorButton(color.value, isSelected, activeColor === color.value, isMobile)}
-                aria-label={`${color.name}${isSelected ? ', selected' : ''}`}
-              >
-                {isSelected && <span style={colorPickerStyles.checkmark} aria-hidden="true">✓</span>}
-              </button>
-            );
-          })}
-        </div>
+        {colors.length === 0 ? (
+          <p style={colorPickerStyles.emptyState}>No highlight colors defined.</p>
+        ) : (
+          <div role="radiogroup" aria-label="Highlight colors" style={colorPickerStyles.colorGrid}>
+            {colors.map((color, index) => {
+              const isSelected = currentColor === color.color;
+              const semantics = color.semantics.trim() || color.color;
+              return (
+                <button
+                  ref={(element) => { colorButtonRefs.current[index] = element; }}
+                  key={color.color}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  tabIndex={isSelected || (!currentColor && index === 0) ? 0 : -1}
+                  onClick={() => onColorSelect(color.color)}
+                  onKeyDown={(event) => handleColorKeyDown(event, index)}
+                  onPointerEnter={() => setActiveColor(color.color)}
+                  onPointerLeave={() => setActiveColor(null)}
+                  onFocus={() => setActiveColor(color.color)}
+                  onBlur={() => setActiveColor(null)}
+                  title={`${semantics} (${color.color})`}
+                  style={colorPickerStyles.colorButton(color.color, isSelected, activeColor === color.color, isMobile)}
+                  aria-label={`${semantics}${isSelected ? ', selected' : ''}`}
+                >
+                  {isSelected && <span style={colorPickerStyles.checkmark} aria-hidden="true">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </>
   );

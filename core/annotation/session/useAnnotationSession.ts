@@ -705,6 +705,7 @@ export function useAnnotationSession({
     );
     spans.forEach((span) => {
       span.style.backgroundColor = color;
+      span.style.setProperty('--highlight-color', color);
     });
   }, [activeRoot]);
 

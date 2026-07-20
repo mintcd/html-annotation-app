@@ -9,11 +9,19 @@ const REMOTE_WEBSITE_TIMEOUT_MS = 5000;
 const REMOTE_WEBSITE_POLL_MS = 150;
 
 type AnnotationRow = Row<'annotations'>;
+type HighlightColorRow = Row<'highlight_colors'>;
 type PageNoteRow = Row<'page_notes'>;
 type PageRow = Row<'pages'>;
 type WebsiteRow = Row<'websites'>;
 
 const PAGE_NOTE_FORMAT = 'plain_text';
+export const FALLBACK_HIGHLIGHT_COLOR = '#87ceeb';
+export const INITIAL_HIGHLIGHT_COLORS: readonly HighlightColor[] = [
+  { color: '#87ceeb', semantics: 'Reference' },
+  { color: '#90ee90', semantics: 'Confirmed' },
+  { color: '#ff6b6b', semantics: 'Concern' },
+  { color: '#d3d3d3', semantics: 'Follow-up' },
+];
 
 type AnnotationInput = {
   id?: string;
@@ -40,6 +48,11 @@ type SyncFlushMode = 'background' | 'await' | 'none';
 
 type SyncWriteOptions = {
   flush?: SyncFlushMode;
+};
+
+type HighlightColorInput = {
+  color: string;
+  semantics: string;
 };
 
 type PageNoteInput = {
@@ -258,6 +271,38 @@ export async function deleteAnnotationRow(
   flushSync('deleted annotation', syncRuntime);
 }
 
+export async function upsertHighlightColorRow(
+  input: HighlightColorInput,
+  runtime?: AppSyncRuntime,
+  options: SyncWriteOptions = {},
+): Promise<HighlightColor> {
+  const color = normalizeHexColor(input.color);
+  const semantics = input.semantics.trim();
+
+  if (!color) throw new Error('Enter a valid hex color.');
+  if (!semantics) throw new Error('Enter color semantics.');
+
+  const syncRuntime = activeRuntime(runtime);
+  const row: HighlightColorRow = { color, semantics };
+
+  await syncRuntime.db.table('highlight_colors').put(row);
+  await flushSync('updated highlight color', syncRuntime, options.flush ?? 'background');
+  return normalizeHighlightColorRow(row);
+}
+
+export async function deleteHighlightColorRow(
+  color: string,
+  runtime?: AppSyncRuntime,
+  options: SyncWriteOptions = {},
+): Promise<void> {
+  const normalized = normalizeHexColor(color);
+  if (!normalized) return;
+
+  const syncRuntime = activeRuntime(runtime);
+  await syncRuntime.db.table('highlight_colors').delete({ color: normalized });
+  await flushSync('deleted highlight color', syncRuntime, options.flush ?? 'background');
+}
+
 export async function upsertPageNoteRow(
   input: PageNoteInput,
   runtime?: AppSyncRuntime,
@@ -324,7 +369,7 @@ export function normalizeAnnotationRow(row: Record<string, unknown>): Annotation
     page_id: String(row.page_id ?? ''),
     text: position.exact,
     html: typeof row.html === 'string' ? row.html : null,
-    color: typeof row.color === 'string' ? row.color : '#87ceeb',
+    color: typeof row.color === 'string' ? row.color : FALLBACK_HIGHLIGHT_COLOR,
     comment: typeof row.comment === 'string' ? row.comment : null,
     created_at: String(row.created_at ?? ''),
     updated_at: String(row.updated_at ?? ''),
@@ -343,6 +388,31 @@ export function normalizePageNoteRow(row: Record<string, unknown>): PageNote {
     created_at: String(row.created_at ?? ''),
     updated_at: String(row.updated_at ?? ''),
   };
+}
+
+export function normalizeHighlightColorRow(row: Record<string, unknown>): HighlightColor {
+  const color = normalizeHexColor(String(row.color ?? '')) ?? FALLBACK_HIGHLIGHT_COLOR;
+  const semantics = stringValue(row.semantics).trim();
+  return {
+    color,
+    semantics: semantics || color,
+  };
+}
+
+export function normalizeHexColor(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const withoutHash = raw.startsWith('#') ? raw.slice(1) : raw;
+  if (/^[0-9a-fA-F]{3}$/.test(withoutHash)) {
+    return `#${withoutHash.split('').map((character) => `${character}${character}`).join('')}`.toLowerCase();
+  }
+
+  if (/^[0-9a-fA-F]{6}$/.test(withoutHash)) {
+    return `#${withoutHash}`.toLowerCase();
+  }
+
+  return null;
 }
 
 export function findPageNoteForPage(

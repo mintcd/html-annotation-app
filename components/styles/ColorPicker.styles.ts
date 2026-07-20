@@ -36,8 +36,8 @@ const colorPickerStyles = {
       : (visualViewport?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 0));
     const margin = 12;
     const gap = 10;
-    const width = Math.min(isMobile ? 240 : 216, Math.max(0, viewportWidth - (margin * 2)));
-    const estimatedHeight = isMobile ? 116 : 104;
+    const width = Math.min(isMobile ? 260 : 232, Math.max(0, viewportWidth - (margin * 2)));
+    const estimatedHeight = isMobile ? 128 : 112;
     const preferredTop = anchorRect
       ? anchorRect.bottom + gap
       : viewportTop + viewportHeight - estimatedHeight - margin;
@@ -137,6 +137,17 @@ const colorPickerStyles = {
     fontSize: '0.6875rem',
     fontWeight: 'var(--ds-font-weight-bold)',
     lineHeight: 1,
+  },
+
+  emptyState: {
+    margin: 0,
+    padding: 'var(--ds-space-3)',
+    border: '1px dashed var(--ds-color-border)',
+    borderRadius: 'var(--ds-radius-lg)',
+    color: 'var(--ds-color-text-secondary)',
+    background: 'var(--ds-color-surface-subtle)',
+    fontSize: 'var(--ds-font-size-xs)',
+    lineHeight: 'var(--ds-line-height-normal)',
   },
 };
 

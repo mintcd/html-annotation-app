@@ -77,6 +77,23 @@ export const finalConfig = defineGeneratedNextSyncConfig({
           }
         }
       },
+      "highlight_colors": {
+        "primaryKey": [
+          "color"
+        ],
+        "columns": {
+          "color": {
+            "affinity": "text",
+            "nullable": false,
+            "generated": false
+          },
+          "semantics": {
+            "affinity": "text",
+            "nullable": false,
+            "generated": false
+          }
+        }
+      },
       "page_notes": {
         "primaryKey": [
           "id"
@@ -211,7 +228,7 @@ export const finalConfig = defineGeneratedNextSyncConfig({
         }
       }
     },
-    "schemaHash": "sha256:16aa828f86d8e733e9d7e5371b1e6041aa962258d1658ac3a0d34038d112766c"
+    "schemaHash": "sha256:081d2eb4c0325d950b0376f34e9d051fd63f64436338df5f054dac96f78be162"
   }
 } as const);
 

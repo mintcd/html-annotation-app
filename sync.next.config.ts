@@ -7,7 +7,7 @@ export default defineNextSyncConfig({
     remote: true,
   },
   schema: {
-    include: ["annotations", "pages", "site_cookies", "page_notes", "websites"],
+    include: ["annotations", "highlight_colors", "pages", "site_cookies", "page_notes", "websites"],
   },
   client: {
     databaseName: "html-annotation-sync",

@@ -19,6 +19,24 @@ body {
   border-radius: 3px;
 }
 
+.page-note-editor-surface > span,
+.page-note-editor-surface [contenteditable="true"] {
+  display: block;
+  width: 100%;
+  min-height: 1.25em;
+  outline: none;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.page-note-editor-surface [contenteditable="true"] {
+  cursor: text;
+}
+
+.page-note-editor-surface .katex-display {
+  margin: 0.35em 0;
+}
+
 /* Device-aware overscroll behavior for the inner annotation list.
    Mouse/trackpad: allow scroll chaining so parent can continue scrolling.
    Touch (mobile): contain overscroll to avoid parent scroll when reaching edges. */

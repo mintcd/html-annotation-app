@@ -4,3 +4,6 @@
 [submodule "hooks"]
 	path = hooks
 	url = https://github.com/mintcd/react-hooks.git
+[submodule "components/text-editor"]
+	path = components/text-editor
+	url = https://github.com/mintcd/text-editor
