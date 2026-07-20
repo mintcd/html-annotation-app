@@ -1,3 +1,6 @@
 [submodule "design-system"]
 	path = design-system
 	url = https://github.com/mintcd/design-system.git
+[submodule "hooks"]
+	path = hooks
+	url = https://github.com/mintcd/react-hooks.git
