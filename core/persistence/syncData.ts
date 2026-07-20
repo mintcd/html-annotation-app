@@ -9,8 +9,11 @@ const REMOTE_WEBSITE_TIMEOUT_MS = 5000;
 const REMOTE_WEBSITE_POLL_MS = 150;
 
 type AnnotationRow = Row<'annotations'>;
+type PageNoteRow = Row<'page_notes'>;
 type PageRow = Row<'pages'>;
 type WebsiteRow = Row<'websites'>;
+
+const PAGE_NOTE_FORMAT = 'plain_text';
 
 type AnnotationInput = {
   id?: string;
@@ -37,6 +40,15 @@ type SyncFlushMode = 'background' | 'await' | 'none';
 
 type SyncWriteOptions = {
   flush?: SyncFlushMode;
+};
+
+type PageNoteInput = {
+  id?: string;
+  page_id: string;
+  content: string;
+  format?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export function syncTimestamp(): string {
@@ -246,6 +258,60 @@ export async function deleteAnnotationRow(
   flushSync('deleted annotation', syncRuntime);
 }
 
+export async function upsertPageNoteRow(
+  input: PageNoteInput,
+  runtime?: AppSyncRuntime,
+  options: SyncWriteOptions = {},
+): Promise<PageNote> {
+  const syncRuntime = activeRuntime(runtime);
+  const pageNotes = syncRuntime.db.table('page_notes');
+  const existing = input.id
+    ? pageNotes.get({ id: input.id })
+    : newestPageNoteRow(pageNotes.all().filter((note) => note.page_id === input.page_id));
+  const format = input.format ?? existing?.format ?? PAGE_NOTE_FORMAT;
+
+  if (
+    existing
+    && existing.page_id === input.page_id
+    && existing.content === input.content
+    && existing.format === format
+  ) {
+    return normalizePageNoteRow(existing);
+  }
+
+  const now = input.updated_at ?? syncTimestamp();
+  const row: PageNoteRow = existing
+    ? {
+        ...existing,
+        page_id: input.page_id,
+        content: input.content,
+        format,
+        updated_at: now,
+      }
+    : {
+        id: input.id ?? crypto.randomUUID(),
+        page_id: input.page_id,
+        content: input.content,
+        format,
+        created_at: input.created_at ?? now,
+        updated_at: now,
+      };
+
+  await pageNotes.put(row);
+  await flushSync(existing ? 'updated page note' : 'inserted page note', syncRuntime, options.flush ?? 'background');
+  return normalizePageNoteRow(row);
+}
+
+export async function deletePageNoteRow(
+  id: string,
+  runtime?: AppSyncRuntime,
+  options: SyncWriteOptions = {},
+): Promise<void> {
+  const syncRuntime = activeRuntime(runtime);
+  await syncRuntime.db.table('page_notes').delete({ id });
+  await flushSync('deleted page note', syncRuntime, options.flush ?? 'background');
+}
+
 export function normalizeAnnotationRow(row: Record<string, unknown>): Annotation {
   const exact = stringValue(row.exact ?? row.text);
   const prefix = stringValue(row.prefix);
@@ -264,6 +330,33 @@ export function normalizeAnnotationRow(row: Record<string, unknown>): Annotation
     updated_at: String(row.updated_at ?? ''),
     position,
   };
+}
+
+export function normalizePageNoteRow(row: Record<string, unknown>): PageNote {
+  return {
+    id: String(row.id ?? ''),
+    page_id: String(row.page_id ?? ''),
+    content: typeof row.content === 'string' ? row.content : '',
+    format: typeof row.format === 'string' && row.format.trim()
+      ? row.format
+      : PAGE_NOTE_FORMAT,
+    created_at: String(row.created_at ?? ''),
+    updated_at: String(row.updated_at ?? ''),
+  };
+}
+
+export function findPageNoteForPage(
+  rows: readonly Record<string, unknown>[] | undefined,
+  pageId: string,
+  pageUrl?: string,
+): PageNote | null {
+  if (!rows) return null;
+
+  const notes = rows
+    .map(normalizePageNoteRow)
+    .filter((note) => note.page_id === pageId || (pageUrl !== undefined && note.page_id === pageUrl));
+
+  return newestPageNote(notes);
 }
 
 function buildAnnotationRow(input: AnnotationInput): AnnotationRow {
@@ -322,6 +415,27 @@ function annotationRowsEqual(left: AnnotationRow, right: AnnotationRow): boolean
     && left.comment === right.comment
     && left.prefix === right.prefix
     && left.suffix === right.suffix;
+}
+
+function newestPageNote(notes: readonly PageNote[]): PageNote | null {
+  if (notes.length === 0) return null;
+
+  return [...notes].sort((left, right) =>
+    noteTimestamp(right) - noteTimestamp(left),
+  )[0] ?? null;
+}
+
+function newestPageNoteRow(notes: readonly PageNoteRow[]): PageNoteRow | undefined {
+  if (notes.length === 0) return undefined;
+
+  return [...notes].sort((left, right) =>
+    noteTimestamp(right) - noteTimestamp(left),
+  )[0];
+}
+
+function noteTimestamp(note: Pick<PageNote, 'updated_at' | 'created_at'>): number {
+  const parsed = Date.parse(note.updated_at || note.created_at || '');
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function normalizePageRow(row: PageRow): Page {

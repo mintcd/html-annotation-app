@@ -208,6 +208,7 @@ export default function PageLibrary({
                     const title = page.title || page.siteTitle || location.host;
                     const normalizedUrl = normalizeUrl(page.url);
                     const showLogo = page.siteLogoSrc && !failedLogoSrcs.has(page.siteLogoSrc);
+                    const notePreview = page.pageNote?.content.replace(/\s+/g, " ").trim();
 
                     return (
                       <button
@@ -242,6 +243,11 @@ export default function PageLibrary({
                         <span className="dashboard-page-card-url" title={page.url}>
                           {location.path}
                         </span>
+                        {notePreview && (
+                          <span className="dashboard-page-card-note">
+                            {notePreview}
+                          </span>
+                        )}
                         <span className="dashboard-page-card-footer">
                           <span className="dashboard-page-card-date">
                             <FiClock aria-hidden="true" />

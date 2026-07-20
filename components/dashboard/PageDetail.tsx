@@ -14,6 +14,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import AnnotationList from "../AnnotationList";
+import PageNoteEditor from "../PageNoteEditor";
 import type { AnnotationPage, EditingCommentState } from "./types";
 import { formatUpdatedAt, getPageLocation } from "./utils";
 
@@ -25,6 +26,7 @@ type PageDetailProps = {
   onOpenAnnotator: (pageUrl: string) => void;
   onDeletePage: (pageUrl: string, filename: string) => void;
   onSaveTitle: (pageUrl: string, title: string) => Promise<void>;
+  onSavePageNote: (pageUrl: string, content: string) => Promise<void>;
   onDeleteAnnotation: (pageUrl: string, annotationId: string) => void;
   onStartEditingComment: (pageUrl: string, annotationId: string, comment: string) => void;
   onCancelEditingComment: () => void;
@@ -39,6 +41,7 @@ export default function PageDetail({
   onOpenAnnotator,
   onDeletePage,
   onSaveTitle,
+  onSavePageNote,
   onDeleteAnnotation,
   onStartEditingComment,
   onCancelEditingComment,
@@ -199,6 +202,12 @@ export default function PageDetail({
 
       <div className="dashboard-content">
         <div className="dashboard-content-inner">
+          <PageNoteEditor
+            mode="dashboard"
+            note={page.pageNote}
+            onSave={(content) => onSavePageNote(page.url, content)}
+          />
+
           <div className="dashboard-content-heading">
             <div>
               <h3 className="dashboard-content-title">Highlights & notes</h3>

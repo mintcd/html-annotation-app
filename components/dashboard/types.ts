@@ -7,6 +7,7 @@ export interface AnnotationPage {
   siteLogoSrc?: string;
   count: number;
   annotations: Annotation[];
+  pageNote: PageNote | null;
   blobUrl: string;
   uploadedAt: string;
 }

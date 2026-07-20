@@ -17,16 +17,20 @@ import type { AnnotationPage, EditingCommentState } from "./dashboard/types";
 import { toAbsoluteUrl } from "./dashboard/utils";
 import {
   deleteAnnotationRow,
+  deletePageNoteRow,
   deletePageRow,
   ensurePage,
   ensureWebsiteAvailableForRoute,
+  findPageNoteForPage,
   findWebsiteByOrigin,
   getOrCreateWebsite,
   normalizeAnnotationRow,
+  normalizePageNoteRow,
   syncTimestamp,
   updateAnnotationRow,
   updatePageRow,
   updateWebsiteRow,
+  upsertPageNoteRow,
   type AppSyncRuntime,
   useSyncRows,
   useSyncRuntime,
@@ -237,6 +241,7 @@ function AuthenticatedDashboard() {
   const runtime = useSyncRuntime();
   const pages = useSyncRows('pages');
   const annotations = useSyncRows('annotations');
+  const pageNotes = useSyncRows('page_notes');
   const websites = useSyncRows('websites');
   const [siteMetadataByOrigin, setSiteMetadataByOrigin] = useState<Record<string, SiteMetadata>>({});
   const metadataOriginsRef = useRef<Set<string>>(new Set());
@@ -294,10 +299,18 @@ function AuthenticatedDashboard() {
     const annotationRows = (annotations.data ?? []).map((row) =>
       normalizeAnnotationRow(row as unknown as Record<string, unknown>),
     );
+    const pageNoteRows = (pageNotes.data ?? []).map((row) =>
+      normalizePageNoteRow(row as unknown as Record<string, unknown>),
+    );
 
     return (pages.data ?? []).map((page) => {
       const pageAnnotations = annotationRows.filter((annotation) =>
         annotation.page_id === page.id || annotation.page_id === page.url,
+      );
+      const pageNote = findPageNoteForPage(
+        pageNoteRows as unknown as Record<string, unknown>[],
+        String(page.id),
+        String(page.url),
       );
       const origin = toOrigin(page.url);
       const website = origin ? websitesByOrigin.get(origin) : undefined;
@@ -316,13 +329,14 @@ function AuthenticatedDashboard() {
         siteLogoSrc,
         count: pageAnnotations.length,
         annotations: pageAnnotations,
+        pageNote,
         blobUrl: '',
         uploadedAt: page.updated_at,
       };
     }).sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
-  }, [annotations.data, pages.data, siteMetadataByOrigin, websitesByOrigin]);
+  }, [annotations.data, pageNotes.data, pages.data, siteMetadataByOrigin, websitesByOrigin]);
 
-  const dataError = pages.error || annotations.error || websites.error;
+  const dataError = pages.error || annotations.error || pageNotes.error || websites.error;
 
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
   const [editingComment, setEditingComment] = useState<EditingCommentState | null>(null);
@@ -370,7 +384,7 @@ function AuthenticatedDashboard() {
       return page.annotations.some((annotation) =>
         annotation.text?.toLowerCase().includes(query)
         || annotation.comment?.toLowerCase().includes(query),
-      );
+      ) || Boolean(page.pageNote?.content.toLowerCase().includes(query));
     });
   }, [annotationPages, searchQuery]);
 
@@ -408,6 +422,11 @@ function AuthenticatedDashboard() {
     try {
       for (const annotation of pageToDelete.annotations) {
         await deleteAnnotationRow(annotation.id, runtime);
+      }
+      for (const note of (pageNotes.data ?? [])
+        .map((row) => normalizePageNoteRow(row as unknown as Record<string, unknown>))
+        .filter((note) => note.page_id === pageRow.id || note.page_id === pageUrl)) {
+        await deletePageNoteRow(note.id, runtime);
       }
       await deletePageRow(pageRow.id, runtime);
 
@@ -501,6 +520,34 @@ function AuthenticatedDashboard() {
     }, runtime);
   }
 
+  async function savePageNote(pageUrl: string, content: string) {
+    const normalizedPageUrl = normalizeUrl(pageUrl);
+    const pageRow = (pages.data ?? []).find((page) => normalizeUrl(page.url) === normalizedPageUrl);
+    if (!pageRow) {
+      throw new Error('Page not found');
+    }
+
+    const existingNote = findPageNoteForPage(
+      pageNotes.data as unknown as Record<string, unknown>[] | undefined,
+      String(pageRow.id),
+      String(pageRow.url),
+    );
+
+    if (content.trim().length === 0) {
+      if (existingNote) {
+        await deletePageNoteRow(existingNote.id, runtime);
+      }
+      return;
+    }
+
+    await upsertPageNoteRow({
+      id: existingNote?.id,
+      page_id: String(pageRow.id),
+      content,
+      format: existingNote?.format,
+    }, runtime);
+  }
+
   async function saveAndNavigateToPage(rawUrl: string) {
     try {
       const absoluteUrl = toAbsoluteUrl(rawUrl);
@@ -576,6 +623,7 @@ function AuthenticatedDashboard() {
             onOpenAnnotator={(pageUrl) => void saveAndNavigateToPage(pageUrl)}
             onDeletePage={deletePage}
             onSaveTitle={savePageTitle}
+            onSavePageNote={savePageNote}
             onDeleteAnnotation={deleteAnnotation}
             onStartEditingComment={startEditingComment}
             onCancelEditingComment={cancelEditingComment}
@@ -587,7 +635,7 @@ function AuthenticatedDashboard() {
             totalAnnotations={totalAnnotations}
             totalUrls={totalUrls}
             searchQuery={searchQuery}
-            loading={pages.loading || annotations.loading || websites.loading}
+            loading={pages.loading || annotations.loading || pageNotes.loading || websites.loading}
             enterUrl={enterUrl}
             searchInputRef={searchInputRef}
             syncStatus={syncStatus}

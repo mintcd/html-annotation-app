@@ -15,9 +15,12 @@ import { useSyncRows, useSyncRuntime, useSyncStatus } from "../core/persistence"
 import {
   createAnnotationRow,
   deleteAnnotationRow,
+  deletePageNoteRow,
+  findPageNoteForPage,
   normalizeAnnotationRow,
   syncTimestamp,
   updateAnnotationRow,
+  upsertPageNoteRow,
 } from "../core/persistence";
 
 type AnnotationUpdate = {
@@ -40,6 +43,7 @@ type AnnotationContextProps = {
 type AnnotationContextType = {
   session: AnnotationSession;
   annotations: Annotation[];
+  pageNote: PageNote | null;
   pageUrl?: string;
   title?: string;
   currentHighlightColor: string;
@@ -47,6 +51,7 @@ type AnnotationContextType = {
   addAnnotation: (payload: { text: string; html: string; color: string; position: TextAnchor }) => Promise<Annotation>;
   deleteAnnotation: (id: string) => void;
   updateAnnotation: (params: AnnotationUpdate) => Promise<boolean>;
+  updatePageNote: (content: string) => Promise<boolean>;
   syncStatus: 'synced' | 'syncing' | 'pending';
   lastAutoSaveStatus: { success: boolean; message: string } | null;
 };
@@ -82,6 +87,7 @@ export function AnnotationContext({
   const sync = useSyncStatus();
   const runtime = useSyncRuntime();
   const liveAnnotations = useSyncRows('annotations');
+  const livePageNotes = useSyncRows('page_notes');
 
   const sourceAnnotations = useMemo(
     () => liveAnnotations.data
@@ -93,6 +99,14 @@ export function AnnotationContext({
   );
 
   const [annotations, setAnnotations] = useState<Annotation[]>(sourceAnnotations);
+  const pageNote = useMemo(
+    () => findPageNoteForPage(
+      livePageNotes.data as unknown as Record<string, unknown>[] | undefined,
+      pageId,
+      pageUrl,
+    ),
+    [livePageNotes.data, pageId, pageUrl],
+  );
 
   useEffect(() => {
     setAnnotations(sourceAnnotations);
@@ -213,6 +227,34 @@ export function AnnotationContext({
     }
   }, [runtime, session]);
 
+  const updatePageNote = useCallback(async (content: string) => {
+    try {
+      const hasContent = content.trim().length > 0;
+
+      if (!hasContent) {
+        if (pageNote) {
+          await deletePageNoteRow(pageNote.id, runtime);
+        }
+        setLastAutoSaveStatus({ success: true, message: "Page note delete queued" });
+        return true;
+      }
+
+      await upsertPageNoteRow({
+        id: pageNote?.id,
+        page_id: pageId,
+        content,
+        format: pageNote?.format,
+      }, runtime);
+      setLastAutoSaveStatus({ success: true, message: "Page note update queued" });
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setLastAutoSaveStatus({ success: false, message: errorMessage });
+      console.error("Failed to queue page note update:", error);
+      return false;
+    }
+  }, [pageId, pageNote, runtime]);
+
   const syncStatus = useMemo<'synced' | 'syncing' | 'pending'>(() => {
     if (sync.isSyncing) return 'syncing';
     if (sync.status === 'error' || sync.status === 'offline' || (sync.pendingCount ?? 0) > 0) return 'pending';
@@ -222,6 +264,7 @@ export function AnnotationContext({
   const value = useMemo(() => ({
     session: contentSession,
     annotations,
+    pageNote,
     pageUrl,
     title: contentSession.title,
     currentHighlightColor,
@@ -229,11 +272,12 @@ export function AnnotationContext({
     addAnnotation,
     deleteAnnotation,
     updateAnnotation,
+    updatePageNote,
     syncStatus,
     lastAutoSaveStatus,
   }), [contentSession, annotations, pageUrl, currentHighlightColor,
     setCurrentHighlightColor, addAnnotation, deleteAnnotation, updateAnnotation,
-    syncStatus, lastAutoSaveStatus]);
+    updatePageNote, pageNote, syncStatus, lastAutoSaveStatus]);
 
   return (
     <AnnotationContextProvider value={value}>

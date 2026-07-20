@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAnnotationContext } from "./Annotator.context";
 import { useMobile, useHotkey, useClickOutside } from "../hooks";
 import AnnotationList from "./AnnotationList";
+import PageNoteEditor from "./PageNoteEditor";
 import { BoxList, DarkMode, LightMode, Sort, PasteHtml, ReadingMode, Refresh, Times } from "../app/icons";
 import { Badge } from "./design-system/badge";
 import { IconButton } from "./design-system/icon-button";
@@ -32,7 +33,7 @@ export default function AnnotationsPanel({
   open: controlledOpen,
   onOpenChange,
 }: SidebarProps) {
-  const { annotations, syncStatus, session, pageUrl, title } = useAnnotationContext();
+  const { annotations, pageNote, updatePageNote, syncStatus, session, pageUrl, title } = useAnnotationContext();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('dom-order');
   const items = useMemo(() => {
@@ -328,6 +329,12 @@ export default function AnnotationsPanel({
                 <span style={styles.resizeHandleGrip} />
               </div>
             )}
+
+            <PageNoteEditor
+              mode="compact"
+              note={pageNote}
+              onSave={updatePageNote}
+            />
 
             <AnnotationList
               scrollToAnnotation={scrollToAnnotation}

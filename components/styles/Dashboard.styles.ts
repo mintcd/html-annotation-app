@@ -736,6 +736,17 @@ export const dashboardCss = String.raw`
     white-space: nowrap;
   }
 
+  .dashboard-page-card-note {
+    display: -webkit-box;
+    min-height: 1.85rem;
+    overflow: hidden;
+    color: #5f6678;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .dashboard-page-card-footer {
     display: flex;
     align-items: center;

@@ -16,6 +16,15 @@ type Page = {
   updated_at: string;
 }
 
+type PageNote = {
+  id: string;
+  page_id: string;
+  content: string;
+  format: string;
+  created_at: string;
+  updated_at: string;
+}
+
 type TextAnchor = {
   version: 1;
   start: number;
