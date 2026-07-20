@@ -6,7 +6,7 @@ import { useAnnotationContext } from "../contexts/Annotator.context";
 import { useMobile, useHotkey, useClickOutside } from "../hooks";
 import { useResizablePanelWidth } from "../hooks/AnnotationsPanel.hooks";
 import AnnotationList from "./AnnotationList";
-import { BoxList, Sort, PasteHtml, ReadingMode, Refresh, Times } from "../app/icons";
+import { BoxList, DarkMode, LightMode, Sort, PasteHtml, ReadingMode, Refresh, Times } from "../app/icons";
 import { Badge } from "./design-system/badge";
 import { IconButton } from "./design-system/icon-button";
 import Dropdown from "./Dropdown";
@@ -177,6 +177,7 @@ export default function AnnotationsPanel({
             transition={{ type: 'spring', stiffness: 420, damping: 30 }}
             aria-label={`Open annotations panel. ${annotations.length} annotations.`}
             title="Annotations (Alt/⌘ + S)"
+            data-theme={session.darkMode ? 'dark' : undefined}
           >
             <BoxList size={22} />
             {annotations.length > 0 && (
@@ -205,6 +206,7 @@ export default function AnnotationsPanel({
             role={isMobile ? "dialog" : "complementary"}
             aria-modal={isMobile || undefined}
             aria-label="Annotations panel"
+            data-theme={session.darkMode ? 'dark' : undefined}
             style={{
               ...styles.sidebarContainer(isMobile, viewportInfo, width),
               ...(isMobile ? sidebarMobileStyle : {}),
@@ -251,6 +253,17 @@ export default function AnnotationsPanel({
 
               <div style={styles.toolbarActions}>
                 <Badge tone={syncTone} size="small" dot>{syncLabel}</Badge>
+                <IconButton
+                  label={session.darkMode ? 'Turn off dark mode' : 'Turn on dark mode'}
+                  title={session.darkMode ? 'Turn off dark mode' : 'Turn on dark mode'}
+                  size="small"
+                  tone={session.darkMode ? 'primary' : 'neutral'}
+                  aria-pressed={session.darkMode}
+                  disabled={!session.document || !session.root}
+                  onClick={() => session.setDarkMode(!session.darkMode)}
+                >
+                  {session.darkMode ? <LightMode size={13} /> : <DarkMode size={13} />}
+                </IconButton>
                 <IconButton
                   label={session.readingMode ? 'Turn off reading mode' : 'Turn on reading mode'}
                   title={session.readingMode ? 'Turn off reading mode' : 'Turn on reading mode'}

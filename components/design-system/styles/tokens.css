@@ -140,6 +140,14 @@
   --ds-color-text-secondary: var(--ds-color-slate-300);
   --ds-color-text-tertiary: var(--ds-color-slate-400);
   --ds-color-text-inverse: var(--ds-color-slate-950);
+  --ds-color-success: #86efac;
+  --ds-color-success-soft: rgba(34, 197, 94, 0.16);
+  --ds-color-warning: #fcd34d;
+  --ds-color-warning-soft: rgba(245, 158, 11, 0.18);
+  --ds-color-danger: #fda4af;
+  --ds-color-danger-soft: rgba(244, 63, 94, 0.18);
+  --ds-color-info: #7dd3fc;
+  --ds-color-info-soft: rgba(14, 165, 233, 0.18);
 }
 
 @media (prefers-reduced-motion: reduce) {

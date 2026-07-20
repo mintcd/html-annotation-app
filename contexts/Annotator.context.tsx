@@ -15,11 +15,9 @@ import { useSyncRows, useSyncRuntime, useSyncStatus } from "../core/persistence"
 import {
   createAnnotationRow,
   deleteAnnotationRow,
-  ensurePage,
   normalizeAnnotationRow,
   syncTimestamp,
   updateAnnotationRow,
-  updatePageRow,
 } from "../core/persistence";
 
 type AnnotationUpdate = {
@@ -46,7 +44,7 @@ type AnnotationContextType = {
   title?: string;
   currentHighlightColor: string;
   setCurrentHighlightColor: React.Dispatch<React.SetStateAction<string>>;
-  addAnnotation: (payload: { text: string; html: string; color: string; position: TextAnchor }) => Promise<{ tempId: string; promise: Promise<string> }>;
+  addAnnotation: (payload: { text: string; html: string; color: string; position: TextAnchor }) => Promise<Annotation>;
   deleteAnnotation: (id: string) => void;
   updateAnnotation: (params: AnnotationUpdate) => Promise<boolean>;
   syncStatus: 'synced' | 'syncing' | 'pending';
@@ -131,67 +129,36 @@ export function AnnotationContext({
     root: initialMatchingComplete ? session.root : null,
   }), [initialMatchingComplete, session]);
 
-  const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position: TextAnchor }): Promise<{ tempId: string; promise: Promise<string> }> => {
+  const addAnnotation = useCallback(async (payload: { text: string; html: string; color: string; position: TextAnchor }): Promise<Annotation> => {
     const { text, html, color, position } = payload;
-    const tempId = crypto.randomUUID();
     const now = syncTimestamp();
-    const tempAnnotation: Annotation = {
-      page_id: pageId,
-      id: tempId,
-      text,
-      color,
-      created_at: now,
-      updated_at: now,
-      html,
-      position,
-    };
-    setAnnotations(prev => [...prev, tempAnnotation]);
 
-    const promise = (async () => {
-      try {
-        const page = await ensurePage(pageUrl, session.title ?? '', runtime);
-        const canonicalPageId = String(page.id);
+    try {
+      const inserted = await createAnnotationRow({
+        page_id: pageId,
+        text,
+        html: html || null,
+        color,
+        comment: null,
+        created_at: now,
+        updated_at: now,
+        position,
+      }, runtime);
 
-        if (session.title) {
-          if (page.title !== session.title) {
-            await updatePageRow(canonicalPageId, {
-              title: session.title,
-              updated_at: syncTimestamp(),
-            }, runtime);
-          }
-        }
-
-        const inserted = await createAnnotationRow({
-          page_id: canonicalPageId,
-          text,
-          html: html || null,
-          color,
-          comment: null,
-          created_at: now,
-          updated_at: now,
-          position,
-        }, runtime);
-        const insertedId = inserted.id;
-
-        setAnnotations(prev => prev.map(ann => (
-          ann.id === tempId
-            ? { ...ann, id: String(insertedId), page_id: canonicalPageId }
-            : ann
-        )));
-
-        setLastAutoSaveStatus({ success: true, message: "Annotation queued (offline-first)" });
-        return String(insertedId);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        setLastAutoSaveStatus({ success: false, message: errorMessage });
-        console.error("Failed to queue annotation:", error);
-        setAnnotations(prev => prev.filter(ann => ann.id !== tempId));
-        throw error;
-      }
-    })();
-
-    return { tempId, promise };
-  }, [pageId, pageUrl, runtime, session.title]);
+      setAnnotations(prev => (
+        prev.some(ann => ann.id === inserted.id)
+          ? prev.map(ann => ann.id === inserted.id ? inserted : ann)
+          : [...prev, inserted]
+      ));
+      setLastAutoSaveStatus({ success: true, message: "Annotation queued (offline-first)" });
+      return inserted;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setLastAutoSaveStatus({ success: false, message: errorMessage });
+      console.error("Failed to queue annotation:", error);
+      throw error;
+    }
+  }, [pageId, runtime]);
 
   const deleteAnnotation = useCallback(async (id: string) => {
     session.removeHighlight(id);

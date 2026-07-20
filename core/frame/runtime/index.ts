@@ -1,4 +1,5 @@
 import { findBestContentNode } from '../../annotation/dom';
+export { applyFrameDarkMode } from '../darkMode';
 
 const COOKIE_BANNER_SELECTORS = [
   'dialog.cc-banner[open]',

@@ -11,6 +11,7 @@ import {
 import { highlightBoundingRect, removeHighlights } from '../dom';
 import {
   applyReadingMode,
+  applyFrameDarkMode,
   framePathFromUrl,
   prepareFrameDocument,
   startExternalLinkInterceptor,
@@ -18,7 +19,6 @@ import {
 import {
   ensurePage,
   ensureWebsiteAvailableForRoute,
-  findPageById,
   getOrCreateWebsite,
   syncTimestamp,
   updatePageRow,
@@ -53,6 +53,8 @@ export type AnnotationSession = {
   openOriginal: (href: string) => void;
   readingMode: boolean;
   setReadingMode: (enabled: boolean) => void;
+  darkMode: boolean;
+  setDarkMode: (enabled: boolean) => void;
   applyAnnotations: (annotations: Annotation[]) => Promise<void>;
   removeHighlight: (id: string) => void;
   updateHighlightColor: (id: string, color: string) => void;
@@ -83,6 +85,7 @@ const MATCH_RETRY_DEBOUNCE_MS = 150;
 const MATCH_FINAL_IDLE_MS = 1500;
 const MATCH_MAX_DURATION_MS = 10000;
 const READING_MODE_STORAGE_KEY = 'anno.readingMode';
+const DARK_MODE_STORAGE_KEY = 'anno.darkMode';
 const MATCH_MUTATION_ATTRIBUTES = ['class', 'style', 'hidden', 'aria-hidden', 'data-mathml'];
 const MEANINGFUL_MUTATION_ATTRIBUTES = new Set(MATCH_MUTATION_ATTRIBUTES);
 const ANNOTATOR_OWNED_SELECTOR = [
@@ -96,6 +99,16 @@ function initialReadingMode(): boolean {
 
   try {
     return window.localStorage.getItem(READING_MODE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function initialDarkMode(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    return window.localStorage.getItem(DARK_MODE_STORAGE_KEY) === 'true';
   } catch {
     return false;
   }
@@ -192,10 +205,12 @@ export function useAnnotationSession({
   const [discoveredTitle, setDiscoveredTitle] = useState(initialTitle);
   const [loadedFrameSource, setLoadedFrameSource] = useState<{ requestUrl: string; sourceUrl: string } | null>(null);
   const [readingMode, setReadingModeState] = useState(initialReadingMode);
+  const [darkMode, setDarkModeState] = useState(initialDarkMode);
   const attachedFrameRef = useRef<HTMLIFrameElement | null>(null);
   const frameLoadCleanupRef = useRef<(() => void) | null>(null);
   const documentCleanupRef = useRef<(() => void) | null>(null);
   const readingModeCleanupRef = useRef<(() => void) | null>(null);
+  const darkModeCleanupRef = useRef<(() => void) | null>(null);
   const annotationMatchCleanupRef = useRef<(() => void) | null>(null);
   const annotationMatchIdRef = useRef(0);
   const frameLoadIdRef = useRef(0);
@@ -229,11 +244,34 @@ export function useAnnotationSession({
     setReadingModeState(enabled);
   }, []);
 
+  const setDarkMode = useCallback((enabled: boolean) => {
+    setDarkModeState(enabled);
+  }, []);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(READING_MODE_STORAGE_KEY, readingMode ? 'true' : 'false');
     } catch {}
   }, [readingMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DARK_MODE_STORAGE_KEY, darkMode ? 'true' : 'false');
+    } catch {}
+  }, [darkMode]);
+
+  useEffect(() => {
+    if (!darkMode) return;
+
+    const root = document.documentElement;
+    const previousTheme = root.getAttribute('data-theme');
+    root.setAttribute('data-theme', 'dark');
+
+    return () => {
+      if (previousTheme === null) root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', previousTheme);
+    };
+  }, [darkMode]);
 
   useEffect(() => {
     readingModeCleanupRef.current?.();
@@ -252,6 +290,23 @@ export function useAnnotationSession({
     };
   }, [activeDocument, activeRoot, readingMode]);
 
+  useEffect(() => {
+    darkModeCleanupRef.current?.();
+    darkModeCleanupRef.current = null;
+
+    if (!darkMode || !activeDocument || !activeRoot) return;
+
+    const cleanup = applyFrameDarkMode(activeDocument, activeRoot);
+    darkModeCleanupRef.current = cleanup;
+
+    return () => {
+      if (darkModeCleanupRef.current === cleanup) {
+        darkModeCleanupRef.current = null;
+        cleanup();
+      }
+    };
+  }, [activeDocument, activeRoot, darkMode]);
+
   const disposeAnnotationMatching = useCallback(() => {
     annotationMatchIdRef.current++;
     annotationMatchCleanupRef.current?.();
@@ -263,12 +318,18 @@ export function useAnnotationSession({
     readingModeCleanupRef.current = null;
   }, []);
 
+  const disposeDarkMode = useCallback(() => {
+    darkModeCleanupRef.current?.();
+    darkModeCleanupRef.current = null;
+  }, []);
+
   const disposeDocumentSession = useCallback(() => {
     disposeAnnotationMatching();
+    disposeDarkMode();
     disposeReadingMode();
     documentCleanupRef.current?.();
     documentCleanupRef.current = null;
-  }, [disposeAnnotationMatching, disposeReadingMode]);
+  }, [disposeAnnotationMatching, disposeDarkMode, disposeReadingMode]);
 
   const clearDocumentSnapshot = useCallback((error = '') => {
     disposeDocumentSession();
@@ -344,13 +405,20 @@ export function useAnnotationSession({
       return;
     }
 
-    if (!titleRef.current && prepared.title) {
-      setDiscoveredTitle(prepared.title);
-      const existingPage = await findPageById(pageId, runtime);
+    const preparedTitle = prepared.title.trim();
+    const page = await ensurePage(pageUrl, preparedTitle || titleRef.current, runtime);
 
-      if (existingPage && !stale()) {
-        await updatePageRow(pageId, {
-          title: prepared.title,
+    if (stale()) {
+      prepared.cleanup();
+      return;
+    }
+
+    if (preparedTitle) {
+      setDiscoveredTitle(preparedTitle);
+
+      if (page.title !== preparedTitle) {
+        await updatePageRow(String(page.id), {
+          title: preparedTitle,
           updated_at: syncTimestamp(),
         }, runtime);
       }
@@ -369,7 +437,7 @@ export function useAnnotationSession({
       ready: true,
       error: '',
     });
-  }, [clearDocumentSnapshot, pageId, runtime]);
+  }, [clearDocumentSnapshot, pageUrl, runtime]);
 
   useEffect(() => {
     handleFrameLoadRef.current = handleFrameLoad;
@@ -686,6 +754,8 @@ export function useAnnotationSession({
     openOriginal,
     readingMode,
     setReadingMode,
+    darkMode,
+    setDarkMode,
     applyAnnotations,
     removeHighlight,
     updateHighlightColor,
@@ -707,6 +777,8 @@ export function useAnnotationSession({
     openOriginal,
     readingMode,
     setReadingMode,
+    darkMode,
+    setDarkMode,
     applyAnnotations,
     removeHighlight,
     updateHighlightColor,

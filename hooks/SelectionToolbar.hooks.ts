@@ -1,29 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useMobile } from ".";
+import { useEffect, useState, useCallback } from "react";
+import { useMobile, useDebouncedCallback } from ".";
 import { cleanedHtml, createTextAnchor, highlightRange, rangeToHtml } from "../core/annotation/dom";
 import { useAnnotationContext } from "../contexts/Annotator.context";
 import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.context";
-
-// Small debounce hook used to create a stable debounced callback
-function useDebouncedCallback<T extends (...args: unknown[]) => void>(fn: T, delay = 100) {
-  const timer = useRef<number | null>(null);
-  const fnRef = useRef(fn);
-
-  useEffect(() => {
-    fnRef.current = fn;
-  }, [fn]);
-
-  useEffect(() => {
-    return () => {
-      if (timer.current) window.clearTimeout(timer.current);
-    };
-  }, []);
-
-  return useCallback((...args: Parameters<T>) => {
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => fnRef.current(...args), delay) as unknown as number;
-  }, [delay]);
-}
 
 function rangeInsideRoot(range: Range, root: HTMLElement): boolean {
   return root.contains(range.startContainer) && root.contains(range.endContainer);
@@ -157,39 +136,24 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
       return;
     }
 
-    // Hide the live selection to avoid flicker while mutating DOM
+    // Hide the live selection to avoid flicker while mutating DOM.
     const iframeWin = session.frame?.contentWindow;
     const sel = (iframeWin ?? window).getSelection();
     if (sel) sel.removeAllRanges();
-    // Create annotation and get temp ID immediately
-    const { tempId, promise } = await addAnnotation({
+
+    const annotation = await addAnnotation({
       text,
       html,
       color: currentHighlightColor,
       position,
-    });
+    }).catch(() => null);
+    if (!annotation) {
+      updateRange(null);
+      return;
+    }
 
-    // Highlight with temp ID immediately
-    highlightRange(range, currentHighlightColor, tempId);
+    highlightRange(range, currentHighlightColor, annotation.id);
     updateRange(null);
-
-    // Update highlight IDs when server responds with real ID
-    promise.then(serverId => {
-      if (serverId !== tempId) {
-        // Update all spans with temp ID to use server ID.
-        // Use iframeDoc (the iframe's content document) rather than container
-        // (the <iframe> element), because querySelectorAll on an <iframe> element
-        // does not search inside its content document.
-        const spans = iframeDoc.querySelectorAll<HTMLSpanElement>(
-          `span.highlighted-text[data-highlight-id="${tempId}"]`
-        );
-        spans.forEach(span => {
-          span.setAttribute('data-highlight-id', serverId);
-        });
-      }
-    }).catch(error => {
-      console.error('Failed to update highlight ID:', error);
-    });
   };
 
   return { range: visibleRange, createHighlight };
