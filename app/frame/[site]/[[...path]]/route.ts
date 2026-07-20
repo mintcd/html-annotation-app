@@ -1,8 +1,9 @@
 // ─── Framed Page Proxy ───────────────────────────────────────────────────────
 //
 // Serves a fully-rewritten HTML page so it can be loaded inside a same-origin
-// <iframe>. Resource URLs are rewritten to /proxy/{slug}/... so assets load
-// correctly. Scripts execute natively in the iframe's own window.
+// <iframe>. Same-origin resource URLs are rewritten to app-origin
+// /proxy/{slug}/... URLs so source <base> tags cannot rebase them upstream.
+// Scripts execute natively in the iframe's own window.
 //
 // Because the iframe shares our origin, the parent app has full
 // iframe.contentDocument access for highlight injection and range matching.
@@ -10,6 +11,15 @@
 import * as cheerio from 'cheerio';
 import { getEnv } from '@/core/utils/env';
 import { webpageStorageKey } from '@/core/frame/pastedHtml';
+import {
+  isSameOriginUrl,
+  resolveUrl,
+  rewriteCssUrls,
+  rewriteSrcset,
+  shouldSkipUrlRewrite,
+  toAppScopedBaseUrl,
+  toProxyAssetUrl,
+} from '@/core/frame/urlRewrite';
 import { syncSessionFromRequest } from '@/core/persistence/syncIdentity';
 import {
   findSyncStateRow,
@@ -30,18 +40,6 @@ function isBlocked(src: string): boolean {
     const h = new URL(src).hostname;
     return BLOCKED_SCRIPT_HOSTS.some(d => h === d || h.endsWith('.' + d));
   } catch { return false; }
-}
-
-function absoluteUrl(base: string, relative: string): string {
-  if (!relative || /^(data:|blob:|mailto:|tel:|javascript:)/i.test(relative)) return relative;
-  try { return new URL(relative, base).href; } catch { return relative; }
-}
-
-function proxiedUrl(slug: string, absolute: string): string {
-  try {
-    const u = new URL(absolute);
-    return `/proxy/${slug}${u.pathname}${u.search}${u.hash}`;
-  } catch { return absolute; }
 }
 
 function isJsonOnly(text: string): boolean {
@@ -250,17 +248,25 @@ export async function GET(
 
   // ── 4. Rewrite URLs (fetched pages) ───────────────────────────────────
   const pageUrl = new URL(finalUrl);
-  const baseTagHref = (() => {
-    const m = html.match(/<base[^>]+href=["']([^"']+)["']/i);
-    return m ? m[1] : null;
-  })();
-  const base = (baseTagHref ? new URL(baseTagHref, pageUrl) : new URL('.', pageUrl)).href;
-
   const $ = cheerio.load(html);
+  const baseTagHref = $('base[href]').first().attr('href');
+  const base = (baseTagHref ? new URL(baseTagHref, pageUrl) : new URL('.', pageUrl)).href;
+  const appOrigin = reqUrl.origin;
 
   // Remove CSP meta tags so the page can load proxied resources
   $('meta[http-equiv="Content-Security-Policy"]').remove();
   $('meta[http-equiv="X-Frame-Options"]').remove();
+  $('base').remove();
+  $('head').prepend(`<base href=${JSON.stringify(toAppScopedBaseUrl(site, base, appOrigin))}>`);
+
+  const proxiedFrameResourceUrl = (absolute: string): string => (
+    isSameOriginUrl(absolute, pageUrl.origin)
+      ? toProxyAssetUrl(site, absolute, appOrigin)
+      : absolute
+  );
+  const rewriteFrameResourceUrl = (raw: string): string => (
+    proxiedFrameResourceUrl(resolveUrl(base, raw))
+  );
 
   // Remove resource hints (React 19 hoists <link> elements from iframes too)
   $('link[rel~="preload"], link[rel~="prefetch"], link[rel~="modulepreload"], link[rel~="preconnect"], link[rel~="dns-prefetch"]').remove();
@@ -268,7 +274,7 @@ export async function GET(
   // Remove blocked third-party scripts
   $('script[src]').each((_, el) => {
     const src = $(el).attr('src') || '';
-    if (isBlocked(absoluteUrl(base, src))) $(el).remove();
+    if (isBlocked(resolveUrl(base, src))) $(el).remove();
   });
 
   // Inject proxy:script-executed signals into inline scripts.
@@ -283,58 +289,52 @@ export async function GET(
     $(el).text(`${content}`);
   });
 
-  // Rewrite src / href / srcset / action on all elements
+  // Rewrite resource URLs to app-origin proxy URLs. Keeping these absolute
+  // prevents source <base> behavior from rebasing /proxy/... back upstream.
   $('[src]').each((_, el) => {
     const src = $(el).attr('src') || '';
-    if (!src || /^(data:|blob:|javascript:)/i.test(src)) return;
-    const abs = absoluteUrl(base, src);
-    const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
-    $(el).attr('src', isSameOrigin ? proxiedUrl(site, abs) : abs);
+    if (shouldSkipUrlRewrite(src)) return;
+    $(el).attr('src', rewriteFrameResourceUrl(src));
   });
 
   $('[href]').each((_, el) => {
     const href = $(el).attr('href') || '';
-    if (!href || /^(#|mailto:|tel:|javascript:)/i.test(href)) return;
+    if (shouldSkipUrlRewrite(href)) return;
     const rel = $(el).attr('rel') || '';
     // Stylesheet hrefs → proxy if same-origin, leave absolute if external CDN
     // (external font CDNs like fonts.googleapis.com have CORS headers; proxying
     // them strips their hostname and causes a 404, breaking web fonts).
     if (rel.includes('stylesheet') || el.tagName === 'link') {
-      const abs = absoluteUrl(base, href);
-      const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
-      $(el).attr('href', isSameOrigin ? proxiedUrl(site, abs) : abs);
+      $(el).attr('href', rewriteFrameResourceUrl(href));
     }
     // <a href> - rewrite to absolute so relative links don't 404 in our origin,
     // but don't proxy them (navigation is handled by the parent app).
     else if (el.tagName === 'a') {
-      $(el).attr('href', absoluteUrl(base, href));
+      $(el).attr('href', resolveUrl(base, href));
     }
+  });
+
+  $('[action]').each((_, el) => {
+    const action = $(el).attr('action') || '';
+    if (shouldSkipUrlRewrite(action)) return;
+    $(el).attr('action', resolveUrl(base, action));
   });
 
   // srcset
   $('[srcset]').each((_, el) => {
     const srcset = $(el).attr('srcset') || '';
-    const rewritten = srcset.split(',').map(part => {
-      const [u, d] = part.trim().split(/\s+/, 2);
-      if (!u || /^(data:|blob:)/i.test(u)) return part;
-      const abs = absoluteUrl(base, u);
-      const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
-      const proxiedOrAbs = isSameOrigin ? proxiedUrl(site, abs) : abs;
-      return d ? `${proxiedOrAbs} ${d}` : proxiedOrAbs;
-    }).join(', ');
-    $(el).attr('srcset', rewritten);
+    $(el).attr('srcset', rewriteSrcset(srcset, rewriteFrameResourceUrl));
   });
 
   // Inline style url() references
   $('[style]').each((_, el) => {
     const style = $(el).attr('style') || '';
-    const rewritten = style.replace(/url\(['"]?([^'")]+)['"]?\)/g, (_m, u) => {
-      if (/^(data:|blob:)/i.test(u)) return _m;
-      const abs = absoluteUrl(base, u);
-      const isSameOrigin = (() => { try { return new URL(abs).origin === pageUrl.origin; } catch { return false; } })();
-      return `url(${isSameOrigin ? proxiedUrl(site, abs) : abs})`;
-    });
-    $(el).attr('style', rewritten);
+    $(el).attr('style', rewriteCssUrls(style, base, proxiedFrameResourceUrl));
+  });
+
+  $('style').each((_, el) => {
+    const style = $(el).html() || '';
+    $(el).text(rewriteCssUrls(style, base, proxiedFrameResourceUrl));
   });
 
   // ── 4. Previously we injected a runtime content script here to rewrite

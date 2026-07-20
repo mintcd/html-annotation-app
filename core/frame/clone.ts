@@ -3,6 +3,14 @@ import { cache } from 'react';
 import * as cheerio from 'cheerio';
 import * as css from 'css';
 import { originToSlug } from '../utils/url';
+import {
+  resolveUrl,
+  rewriteCssUrls,
+  rewriteInlineScriptAssetReferences,
+  rewriteSrcset,
+  shouldSkipUrlRewrite,
+  toProxyAssetUrlForOrigin,
+} from './urlRewrite';
 
 export type ClonedPage = {
   title: string;
@@ -18,25 +26,6 @@ export type ClonedPage = {
     location?: 'head' | 'body';
   }>;
 };
-
-function isSkippable(u: string) {
-  return /^data:|^blob:|^mailto:|^tel:|^javascript:/i.test(u || "");
-}
-
-function absoluteUrl(base: string, relative: string): string {
-  if (!relative) return '';
-  if (/^data:|^blob:|^mailto:|^tel:|^javascript:/i.test(relative)) return relative;
-  try {
-    return new URL(relative, base).href;
-  } catch (e) {
-    try {
-      const dir = new URL('.', base).href;
-      return new URL(relative, dir).href;
-    } catch (err) {
-      return relative;
-    }
-  }
-}
 
 function isJsonOnly(text: string): boolean {
   const trimmed = text.trim();
@@ -70,31 +59,6 @@ function injectSignalSnippet(text: string, url: string, signalId?: string, scrip
   return `${text}\n${signalSnippet}`;
 }
 
-function rewriteCss(cssText: string, cssUrl: string, proxiedUrl: (url: string) => string) {
-  cssText = cssText.replace(/url\((['"]?)([^'"\)]+)\1\)/g, (match, quote, url) => {
-    if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) return match;
-    try {
-      return `url(${quote}${proxiedUrl(new URL(url, cssUrl).href)}${quote})`;
-    } catch { return match; }
-  });
-
-  cssText = cssText.replace(/@import\s+url\((['"]?)([^'"\)]+)\1\)/g, (match, quote, url) => {
-    if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) return match;
-    try {
-      return `@import url(${quote}${proxiedUrl(new URL(url, cssUrl).href)}${quote})`;
-    } catch { return match; }
-  });
-
-  cssText = cssText.replace(/@import\s+(['"])([^'";\)]+)\1\s*;/g, (match, quote, url) => {
-    if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) return match;
-    try {
-      return `@import url(${quote}${proxiedUrl(new URL(url, cssUrl).href)}${quote})`;
-    } catch { return match; }
-  });
-
-  return cssText;
-}
-
 export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   if (!url) throw new Error('Missing URL');
 
@@ -120,27 +84,16 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
 
   $('[src],[href]').each((_, el) => {
     const raw = ($(el).attr('src') || $(el).attr('href') || '').trim();
-    if (!raw || isSkippable(raw)) return;
+    if (shouldSkipUrlRewrite(raw)) return;
     try {
-      const origin = new URL(absoluteUrl(clonedBase, raw)).origin;
+      const origin = new URL(resolveUrl(clonedBase, raw)).origin;
       if (!slugMap.has(origin)) {
         slugMap.set(origin, originToSlug(origin));
       }
     } catch { /* ignore */ }
   });
 
-  // Slug-aware proxy URL builder — used everywhere below.
-  // Assets go to /proxy/{slug}{pathname} so they never collide with the
-  // [site]/[[...path]] page route. No middleware needed.
-  function proxiedUrl(targetUrl: string): string {
-    try {
-      const u = new URL(targetUrl);
-      const slug = slugMap.get(u.origin) ?? originToSlug(u.origin);
-      return `/proxy/${slug}${u.pathname}${u.search}${u.hash}`;
-    } catch {
-      return targetUrl;
-    }
-  }
+  const proxiedUrl = (targetUrl: string) => toProxyAssetUrlForOrigin(targetUrl, slugMap);
 
   // Remove cookie/consent banners and unneeded link hints
   $('[class*="cookie"], [id*="cookie"], [class*="consent"], [id*="consent"], [class*="gdpr"], [id*="gdpr"]').remove();
@@ -168,7 +121,7 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
       $(el).removeAttr('onload');
       $(el).removeAttr('onerror');
     } else if (asVal === 'font' && href) {
-      try { $(el).attr('href', proxiedUrl(absoluteUrl(clonedBase, href))); } catch { }
+      try { $(el).attr('href', proxiedUrl(resolveUrl(clonedBase, href))); } catch { }
     } else {
       $(el).remove();
     }
@@ -179,30 +132,22 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   $('a[href]').each((_, el) => {
     const href = $(el).attr('href');
     if (!href) return;
-    if (/^(#|mailto:|tel:|javascript:)/i.test(href)) return;
-    $(el).attr('href', absoluteUrl(clonedBase, href));
+    if (shouldSkipUrlRewrite(href)) return;
+    $(el).attr('href', resolveUrl(clonedBase, href));
   });
 
   // Images
   $('img[src]').each((_, el) => {
     const src = $(el).attr('src') as string;
-    $(el).attr('src', absoluteUrl(clonedBase, src));
+    if (shouldSkipUrlRewrite(src)) return;
+    $(el).attr('src', resolveUrl(clonedBase, src));
   });
 
   // srcset
   $('img[srcset], source[srcset]').each((_, el) => {
     const srcset = $(el).attr('srcset');
     if (!srcset) return;
-    const rewritten = srcset
-      .split(',')
-      .map(part => {
-        const [u, d] = part.trim().split(/\s+/, 2);
-        if (!u || isSkippable(u)) return part;
-        const abs = absoluteUrl(clonedBase, u);
-        return d ? `${abs} ${d}` : abs;
-      })
-      .join(', ');
-    $(el).attr('srcset', rewritten);
+    $(el).attr('srcset', rewriteSrcset(srcset, (srcsetUrl) => resolveUrl(clonedBase, srcsetUrl)));
   });
 
   // Extract scripts into a serializable array so the client can inject them
@@ -248,31 +193,13 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     const defer = script.attr('defer') !== undefined;
 
     if (src) {
-      const abs = absoluteUrl(clonedBase, src);
+      const abs = resolveUrl(clonedBase, src);
       if (isBlockedScript(abs)) { script.remove(); return; }
       const proxied = proxiedUrl(abs);
       const scriptId = `${url}#script-${scripts.length}`;
       scripts.push({ id: scriptId, src: proxied, type, async, defer, location: 'head' });
     } else if (content) {
-      let rewrittenContent = content;
-      rewrittenContent = rewrittenContent.replace(/(?:[\"']?)src(?:[\"']?)\s*:\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
-        return `src: ${q}${proxiedUrl(absoluteUrl(clonedBase, u))}${q}`;
-      });
-      rewrittenContent = rewrittenContent.replace(/\.src\s*=\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
-        return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
-      });
-      rewrittenContent = rewrittenContent.replace(/setAttribute\(\s*("|')src\1\s*,\s*("|')(.*?)\2\s*\)/g, (m: any, _q1: any, q2: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
-        return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
-      });
-      rewrittenContent = rewrittenContent.replace(/(\w+)\s*:\s*['"](\/[^'\"]*)['"]/g, (m: any, prop: any, u: any) => {
-        if (prop === 'src' && !u.startsWith('http') && !u.startsWith('//') && !isSkippable(u) && !u.includes('/proxy/')) {
-          return `${prop}: '${proxiedUrl(absoluteUrl(clonedBase, u))}'`;
-        }
-        return m;
-      });
+      const rewrittenContent = rewriteInlineScriptAssetReferences(content, clonedBase, proxiedUrl);
 
       const scriptId = `${url}#script-${scripts.length}`;
       const finalContent = injectSignalSnippet(rewrittenContent, url, scriptId, type);
@@ -290,31 +217,13 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     const defer = script.attr('defer') !== undefined;
 
     if (src) {
-      const abs = absoluteUrl(clonedBase, src);
+      const abs = resolveUrl(clonedBase, src);
       if (isBlockedScript(abs)) { script.remove(); return; }
       const proxied = proxiedUrl(abs);
       const scriptId = `${url}#script-${scripts.length}`;
       scripts.push({ id: scriptId, src: proxied, type, async, defer, location: 'body' });
     } else if (content) {
-      let rewrittenContent = content;
-      rewrittenContent = rewrittenContent.replace(/(?:[\"']?)src(?:[\"']?)\s*:\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
-        return `src: ${q}${proxiedUrl(absoluteUrl(clonedBase, u))}${q}`;
-      });
-      rewrittenContent = rewrittenContent.replace(/\.src\s*=\s*("|')(.*?)\1/g, (m: any, q: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
-        return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
-      });
-      rewrittenContent = rewrittenContent.replace(/setAttribute\(\s*("|')src\1\s*,\s*("|')(.*?)\2\s*\)/g, (m: any, _q1: any, q2: any, u: any) => {
-        if (!u || u.startsWith('http') || u.startsWith('//') || isSkippable(u) || u.includes('/proxy/')) return m;
-        return m.replace(u, proxiedUrl(absoluteUrl(clonedBase, u)));
-      });
-      rewrittenContent = rewrittenContent.replace(/(\w+)\s*:\s*['"](\/[^'\"]*)['"]/g, (m: any, prop: any, u: any) => {
-        if (prop === 'src' && !u.startsWith('http') && !u.startsWith('//') && !isSkippable(u) && !u.includes('/proxy/')) {
-          return `${prop}: '${proxiedUrl(absoluteUrl(clonedBase, u))}'`;
-        }
-        return m;
-      });
+      const rewrittenContent = rewriteInlineScriptAssetReferences(content, clonedBase, proxiedUrl);
 
       const scriptId = `${url}#script-${scripts.length}`;
       const finalContent = injectSignalSnippet(rewrittenContent, url, scriptId, type);
@@ -347,7 +256,7 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
       styleContent = `.cloned-content { ${styleContent} }`;
     }
     try {
-      styleContent = rewriteCss(styleContent, clonedBase, proxiedUrl);
+      styleContent = rewriteCssUrls(styleContent, clonedBase, proxiedUrl);
     } catch { }
     headStyles.push(`<style>${styleContent}</style>`);
   }).remove();
@@ -357,7 +266,7 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
       const href = $(el).attr('href');
       if (href) {
         try {
-          const abs = absoluteUrl(clonedBase, href);
+          const abs = resolveUrl(clonedBase, href);
           $(el).attr('href', proxiedUrl(abs));
         } catch { }
       }
@@ -375,7 +284,7 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   $('body style').each((_: any, el: any) => {
     try {
       let styleContent = $(el).html() || '';
-      try { styleContent = rewriteCss(styleContent, clonedBase, proxiedUrl); } catch { }
+      try { styleContent = rewriteCssUrls(styleContent, clonedBase, proxiedUrl); } catch { }
       try {
         const parsed = css.parse(styleContent);
         if (parsed.stylesheet) {
@@ -405,13 +314,13 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     const asVal = ($(el).attr('as') || '').toLowerCase();
     const href = $(el).attr('href');
     if (asVal === 'style' && href) {
-      try { $(el).attr('href', proxiedUrl(absoluteUrl(clonedBase, href))); } catch { }
+      try { $(el).attr('href', proxiedUrl(resolveUrl(clonedBase, href))); } catch { }
       $(el).attr('rel', 'stylesheet');
       $(el).removeAttr('as');
       $(el).removeAttr('onload');
       $(el).removeAttr('onerror');
     } else if (asVal === 'font' && href) {
-      try { $(el).attr('href', proxiedUrl(absoluteUrl(clonedBase, href))); } catch { }
+      try { $(el).attr('href', proxiedUrl(resolveUrl(clonedBase, href))); } catch { }
     } else {
       $(el).remove();
     }
@@ -423,7 +332,7 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
   $('body link[rel="stylesheet"]').each((_: any, el: any) => {
     const href = $(el).attr('href');
     if (href) {
-      try { $(el).attr('href', proxiedUrl(absoluteUrl(clonedBase, href))); } catch { }
+      try { $(el).attr('href', proxiedUrl(resolveUrl(clonedBase, href))); } catch { }
     }
   });
 

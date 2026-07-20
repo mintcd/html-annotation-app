@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import {
+  frameSiteFromPathname,
+  toProxyAssetPathFromFrameRequest,
+} from './core/frame/urlRewrite';
 
-// Middleware: rewrite iframe navigations to internal /_frame handler.
+function isRoutePath(pathname: string, route: string): boolean {
+  return pathname === route || pathname.startsWith(`${route}/`);
+}
+
+// Middleware: rewrite iframe navigations and same-origin frame asset fallbacks.
 export function proxy(req: NextRequest) {
   const url = req.nextUrl.clone();
   const { pathname } = url;
@@ -9,9 +17,11 @@ export function proxy(req: NextRequest) {
   // Skip internal or static routes
   if (
     pathname.startsWith('/_') ||
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/favicon.ico') ||
-    pathname.startsWith('/robots.txt') ||
+    isRoutePath(pathname, '/frame') ||
+    isRoutePath(pathname, '/proxy') ||
+    isRoutePath(pathname, '/api') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/robots.txt' ||
     pathname.includes('/_next/')
   ) {
     return NextResponse.next();
@@ -22,8 +32,8 @@ export function proxy(req: NextRequest) {
   // to pass through so API calls aren't accidentally rewritten.
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return NextResponse.next();
 
-  // 1) If the request came from a proxied iframe (referer contains /_frame/{site}),
-  //    rewrite non-document resource requests to /_proxy/{site}/… so assets load.
+  // 1) If the request came from a proxied iframe (referer contains /frame/{site}),
+  //    rewrite non-document resource requests to /proxy/{site}/... so assets load.
   const referer = req.headers.get('referer') || req.headers.get('referrer') || '';
   // Fallback: if the frame handler set a cookie with the site slug, use that
   // when Referer is absent or suppressed.
@@ -37,7 +47,7 @@ export function proxy(req: NextRequest) {
       const site = proxyCookie.split('=')[1];
       const accept = (req.headers.get('accept') || '').toLowerCase();
       if (!accept.includes('text/html')) {
-        const dest = `/_proxy/${site}${pathname}${url.search}`;
+        const dest = toProxyAssetPathFromFrameRequest(site, pathname, url.search);
         return NextResponse.rewrite(new URL(dest, req.url));
       }
     } catch (e) {
@@ -47,14 +57,12 @@ export function proxy(req: NextRequest) {
   if (referer) {
     try {
       const r = new URL(referer);
-      const refParts = r.pathname.split('/').filter(Boolean);
-      const frameIndex = refParts.indexOf('_frame');
-      if (frameIndex >= 0 && refParts.length > frameIndex + 1) {
-        const site = refParts[frameIndex + 1];
+      const site = frameSiteFromPathname(r.pathname);
+      if (site) {
         const accept = (req.headers.get('accept') || '').toLowerCase();
         // Skip HTML navigations — only rewrite resource requests
         if (!accept.includes('text/html')) {
-          const dest = `/_proxy/${site}${pathname}${url.search}`;
+          const dest = toProxyAssetPathFromFrameRequest(site, pathname, url.search);
           return NextResponse.rewrite(new URL(dest, req.url));
         }
       }
@@ -75,11 +83,11 @@ export function proxy(req: NextRequest) {
   if (parts.length === 0) return NextResponse.next();
   const site = parts.shift();
   const rest = parts.join('/');
-  const dest = `/_frame/${site}${rest ? '/' + rest : ''}${url.search}`;
+  const dest = `/frame/${site}${rest ? '/' + rest : ''}${url.search}`;
 
   return NextResponse.rewrite(new URL(dest, req.url));
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|_next|api|_proxy|_frame).*)'],
+  matcher: ['/((?!_next/static|_next/image|_next|api(?:/|$)|proxy(?:/|$)|frame(?:/|$)|_proxy(?:/|$)|_frame(?:/|$)).*)'],
 };

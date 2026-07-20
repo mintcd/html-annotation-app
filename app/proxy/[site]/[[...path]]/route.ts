@@ -1,14 +1,12 @@
 // ─── Asset Proxy ─────────────────────────────────────────────────────────────
 //
-// This route is never hit directly by the browser. Next.js middleware rewrites
-// /{site-slug}/path/to/file.ext -> /proxy/{site-slug}/path/to/file.ext so that
-// asset URLs in cloned pages look like  /plato-stanford-edu/scripts/app.js
-// while this handler fetches the real upstream content.
+// Rewritten frame resources point here as /proxy/{site-slug}/path/to/file.ext.
+// Middleware also routes same-origin fallback requests from runtime-generated
+// relative URLs to this handler so it can fetch the real upstream content.
 //
-// Because the browser believes the asset lives at /{slug}/path/, relative
-// imports/url() values resolve correctly without any rewriting.
-// We only need to rewrite ROOT-RELATIVE paths ( /absolute ) that would
-// otherwise resolve against the app's own origin instead of the site's.
+// Because the browser believes the asset lives under /proxy/{slug}/path/,
+// relative imports/url() values inside CSS and scripts keep resolving through
+// this same asset proxy path.
 
 import { syncSessionFromRequest } from "@/core/persistence/syncIdentity";
 import {
