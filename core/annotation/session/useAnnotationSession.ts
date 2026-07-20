@@ -29,6 +29,7 @@ import {
 import { ensureFrameCacheReady, refreshFrameBundle } from '../../frame/cache';
 import { normalizeUrl } from '../../utils/url';
 import { applyAnnotationHighlights, type AnnotationHighlightFailure } from './highlights';
+import { shouldAdoptPreparedPageTitle, storedPageTitle } from './title';
 
 export type AnnotationSessionOptions = {
   pageId: string;
@@ -202,7 +203,7 @@ export function useAnnotationSession({
   const runtime = useSyncRuntime();
   const livePages = useSyncRows('pages');
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(EMPTY_SNAPSHOT);
-  const [discoveredTitle, setDiscoveredTitle] = useState(initialTitle);
+  const [discoveredTitle, setDiscoveredTitle] = useState('');
   const [loadedFrameSource, setLoadedFrameSource] = useState<{ requestUrl: string; sourceUrl: string } | null>(null);
   const [readingMode, setReadingModeState] = useState(initialReadingMode);
   const [darkMode, setDarkModeState] = useState(initialDarkMode);
@@ -220,7 +221,11 @@ export function useAnnotationSession({
     () => livePages.data?.find((page) => page.id === pageId),
     [livePages.data, pageId],
   );
-  const title = livePage?.title || discoveredTitle;
+  const initialStoredTitle = storedPageTitle(initialTitle);
+  const persistedTitle = livePage
+    ? storedPageTitle(livePage.title)
+    : initialStoredTitle;
+  const title = persistedTitle || discoveredTitle;
   const titleRef = useRef(title);
 
   useEffect(() => {
@@ -406,16 +411,19 @@ export function useAnnotationSession({
     }
 
     const preparedTitle = prepared.title.trim();
-    const page = await ensurePage(pageUrl, preparedTitle || titleRef.current, runtime);
+    const page = await ensurePage(pageUrl, titleRef.current || preparedTitle, runtime);
 
     if (stale()) {
       prepared.cleanup();
       return;
     }
 
-    if (preparedTitle) {
+    const storedTitle = storedPageTitle(page.title);
+    if (shouldAdoptPreparedPageTitle(storedTitle, preparedTitle)) {
       setDiscoveredTitle(preparedTitle);
+    }
 
+    if (preparedTitle && !storedTitle) {
       if (page.title !== preparedTitle) {
         await updatePageRow(String(page.id), {
           title: preparedTitle,

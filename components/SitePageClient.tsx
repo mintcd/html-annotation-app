@@ -70,6 +70,7 @@ export default function SitePageClient({
       iframeUrl={proxiedUrl}
       frameSiteId={frameSiteId}
       frameStoragePath={frameStoragePath}
+      initialTitle={String(pageRow.title ?? '')}
     />
   );
 }
