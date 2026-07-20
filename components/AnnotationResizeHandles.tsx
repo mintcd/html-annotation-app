@@ -8,12 +8,12 @@ import { Button } from './design-system/button';
 import { useCoarsePointer } from '../hooks';
 import sticksStyles from './styles/Sticks.styles';
 import {
-  cleanedHtml,
+  cleanHtml,
   createTextAnchor,
   createTextIndex,
   getRange,
   highlightRange,
-  rangeToHtml,
+  convertRangeToHtml,
   removeHighlights,
 } from '../core/annotation/dom';
 
@@ -411,7 +411,7 @@ export default function AnnotationResizeHandles({ annotationId, onResize }: Prop
       const reconstructed = getRange(root, position);
       const cleanRange = reconstructed.range;
       position = reconstructed.resolvedPosition ?? position;
-      html = cleanedHtml(rangeToHtml(cleanRange)).html;
+      html = cleanHtml(convertRangeToHtml(cleanRange)).html;
       highlightRange(cleanRange, annotation.color, annotationId);
       updatedRange = getHighlightRange(root.ownerDocument, annotationId);
       if (!updatedRange) throw new Error('The resized range could not be highlighted');

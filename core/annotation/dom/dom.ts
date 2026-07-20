@@ -12,171 +12,13 @@ export {
   normalizeAnchorText,
 } from '../model/index.ts';
 
-export function shortenHtml(html: string, maxLength: number = 150): string {
-  html = (html || '').trim();
-  if (!html) return '';
 
-  const src = document.createElement('div');
-  src.innerHTML = html;
-
-  const out = document.createElement('div');
-  let count = 0;
-  let finished = false;
-
-  // Helpers to detect math delimiters in a text chunk and avoid splitting them
-  function findNextClosingDoubleDollar(text: string, from: number): number {
-    return text.indexOf('$$', from);
-  }
-
-  function findNextClosingSingleDollar(text: string, from: number): number {
-    return text.indexOf('$', from);
-  }
-
-  // Count occurrences of a substring non-overlapping
-  function countOccurrences(text: string, sub: string): number {
-    if (!sub) return 0;
-    let c = 0;
-    let idx = 0;
-    while ((idx = text.indexOf(sub, idx)) !== -1) {
-      c++;
-      idx += sub.length;
-    }
-    return c;
-  }
-
-  function appendTextFragment(parent: Node, text: string) {
-    parent.appendChild(document.createTextNode(text));
-  }
-
-  function visit(node: Node, outParent: Node) {
-    if (finished) return;
-
-    if (node.nodeType === Node.TEXT_NODE) {
-      const txt = (node as Text).nodeValue || '';
-      if (txt.length === 0) return;
-
-      const remaining = maxLength - count;
-      if (remaining <= 0) {
-        finished = true;
-        return;
-      }
-
-      if (txt.length <= remaining) {
-        appendTextFragment(outParent, txt);
-        count += txt.length;
-        return;
-      }
-
-      // We'll need to cut this text node but avoid splitting math delimited by $$ or $
-      let cutIndex = remaining;
-
-      // Check for $$ occurrences
-      // Count how many $$ exist in the prefix (non-overlapping). If odd -> unmatched opening
-      const prefix = txt.slice(0, cutIndex);
-      const suffix = txt.slice(cutIndex);
-
-      const doubleBefore = countOccurrences(prefix, '$$');
-      if (doubleBefore % 2 === 1) {
-        const next = findNextClosingDoubleDollar(txt, cutIndex);
-        if (next !== -1) {
-          cutIndex = next + 2;
-        } else {
-          // no closing found in this node, try to include full node to avoid breaking
-          appendTextFragment(outParent, txt);
-          count += txt.length;
-          // let traversal continue but we already added the whole node
-          return;
-        }
-      } else {
-        // Handle single $ that are not part of $$
-        // Build a simple view where we mask out $$ so single $ count is accurate
-        const masked = txt.replace(/\$\$/g, '__DOLLAR2__');
-        const singleBefore = countOccurrences(masked.slice(0, cutIndex), '$');
-        if (singleBefore % 2 === 1) {
-          const next = findNextClosingSingleDollar(txt, cutIndex);
-          if (next !== -1) {
-            cutIndex = next + 1;
-          } else {
-            // no closing found in this node, include full node
-            appendTextFragment(outParent, txt);
-            count += txt.length;
-            return;
-          }
-        }
-      }
-
-      // Strip at word boundary: walk back to the end of the previous word
-      let wordCut = cutIndex;
-      while (wordCut > 0 && !/\s/.test(txt[wordCut - 1])) {
-        wordCut--;
-      }
-      // Only use the word boundary if we actually found whitespace;
-      // otherwise fall back to the original cutIndex to avoid empty output
-      if (wordCut > 0) cutIndex = wordCut;
-
-      // Final safe cut
-      appendTextFragment(outParent, txt.slice(0, cutIndex));
-      count += cutIndex;
-      finished = true;
-      return;
-    }
-
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-
-      // Treat math/script-like elements as atomic: if they contain math source we append whole element
-      const isMathScript = el.tagName.toLowerCase() === 'script' && (el.getAttribute('type') || '').toLowerCase().startsWith('math');
-      const hasMathAttr = el.hasAttribute('data-mathml') || el.tagName.toLowerCase() === 'annotation' || el.classList.contains('katex') || el.className.indexOf('MathJax') !== -1;
-
-      if ((isMathScript || hasMathAttr) && !finished) {
-        // append clone of entire element to ensure math is not split
-        outParent.appendChild(el.cloneNode(true));
-        // update count with textContent length (best-effort)
-        count += (el.textContent || '').length;
-        // If we've reached or exceeded the limit, stop
-        if (count >= maxLength) finished = true;
-        return;
-      }
-
-      // Normal element: clone shallowly, then descend into children until limit
-      const shallow = el.cloneNode(false);
-      outParent.appendChild(shallow);
-      for (let child = node.firstChild; child; child = child.nextSibling) {
-        if (finished) break;
-        visit(child, shallow);
-      }
-      // If element became empty (no children and no text), remove it to avoid stray empty tags
-      if (!shallow.childNodes || shallow.childNodes.length === 0) {
-        shallow.parentNode?.removeChild(shallow);
-      }
-      return;
-    }
-
-    // For other node types, ignore
-  }
-
-  for (let c = src.firstChild; c; c = c.nextSibling) {
-    if (finished) break;
-    visit(c, out);
-  }
-
-  // Trim trailing whitespace in output; only append "..." if the text was truncated
-  return out.innerHTML.trim() + (finished ? "..." : "");
-}
-
-export function rangeToHtml(range: Range | null): string {
-  if (!range) {
-    console.log("Range is null")
-    return '';
-  }
-
-  // Clone the range to avoid affecting the original
+export function convertRangeToHtml(range: Range): string {
   const clonedRange = range.cloneRange();
   const fragment = clonedRange.cloneContents();
-
-  // Create a temporary container
   const tempDiv = document.createElement('div');
   tempDiv.appendChild(fragment);
+
   return tempDiv.innerHTML;
 }
 
@@ -220,7 +62,14 @@ export function findBestContentNode(root: HTMLElement, threshold: number = 0.8, 
   }
 }
 
-export function cleanedHtml(html: string): { html: string; mathSource?: string } {
+/**
+ * Clean HTML content by removing unnecessary elements, normalizing whitespace, and preserving math sources.
+ * This function is particularly useful for preparing HTML content for annotation or storage.
+ *
+ * @param html The HTML string to be cleaned.
+ * @returns An object containing the cleaned HTML and any collected math sources.
+ */
+export function cleanHtml(html: string): { html: string; mathSource?: string } {
   if (!html.trim()) return { html: '' };
 
   // Parse the HTML string into a DOM element
@@ -509,7 +358,7 @@ export function createTextIndex(root: HTMLElement): TextIndex {
   );
 }
 
-function rangeFromCharacters(
+function buildRangeFromIndexedCharacters(
   ownerDocument: Document,
   characters: IndexedCharacter[],
   start: number,
@@ -586,7 +435,7 @@ export function getRange(
   const start = findTextAnchorMatch(index.text, exact, position);
   if (start !== null) {
     const end = start + exact.length;
-    const range = rangeFromCharacters(root.ownerDocument, index.characters, start, end);
+    const range = buildRangeFromIndexedCharacters(root.ownerDocument, index.characters, start, end);
     if (!range) throw new Error('Unable to reconstruct annotation range');
     const resolvedPosition = anchorAt(index, start, end);
     return {

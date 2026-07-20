@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useMobile, useDebouncedCallback } from ".";
-import { cleanedHtml, createTextAnchor, highlightRange, rangeToHtml } from "../core/annotation/dom";
+import { cleanHtml, createTextAnchor, highlightRange, convertRangeToHtml } from "../core/annotation/dom";
 import { useAnnotationContext } from "../contexts/Annotator.context";
 import { useAnnotatorOverlayOptional } from "../contexts/AnnotatorOverlay.context";
 
@@ -110,7 +110,7 @@ export function useAnnotationSelection(menuRef: React.RefObject<HTMLElement | nu
       return;
     }
 
-    const { html } = cleanedHtml(rangeToHtml(range));
+    const { html } = cleanHtml(convertRangeToHtml(range));
     // Capture a durable anchor before highlightRange splits and wraps text
     // nodes. This makes the first reload use the fast position path.
     const position = createTextAnchor(contentRoot, range);

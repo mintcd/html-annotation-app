@@ -1,4 +1,5 @@
 import { findBestContentNode } from '../../annotation/dom';
+import { resolveExternalLinkHref } from '../externalLinks';
 export { applyFrameDarkMode } from '../darkMode';
 
 const COOKIE_BANNER_SELECTORS = [
@@ -69,6 +70,11 @@ export type PreparedFrameDocument = {
   cleanup: () => void;
 };
 
+export type ExternalLinkInterceptorOptions = {
+  appOrigin?: string;
+  sourcePageUrl?: string;
+};
+
 export function framePathFromUrl(iframeUrl: string): string {
   const parts = iframeUrl.replace(/^\/+frame\//, '').split('?')[0].split('/');
   return parts.slice(1).join('/');
@@ -110,10 +116,40 @@ export async function prepareFrameDocument(iframe: HTMLIFrameElement): Promise<P
   };
 }
 
+function eventTargetElement(target: EventTarget | null, doc: Document): Element | null {
+  if (!target) return null;
+
+  const frameWindow = doc.defaultView;
+  if (frameWindow?.Element && target instanceof frameWindow.Element) {
+    return target;
+  }
+
+  if (frameWindow?.Node && target instanceof frameWindow.Node) {
+    const node = target as Node;
+    return node.nodeType === 1 ? node as Element : node.parentElement;
+  }
+
+  const maybeElement = target as {
+    closest?: unknown;
+    parentElement?: { closest?: unknown };
+  };
+  if (typeof maybeElement.closest === 'function') return target as Element;
+  if (typeof maybeElement.parentElement?.closest === 'function') {
+    return maybeElement.parentElement as Element;
+  }
+
+  return null;
+}
+
 export function startExternalLinkInterceptor(
   doc: Document,
   onExternalHref: (href: string) => void,
+  options: ExternalLinkInterceptorOptions = {},
 ): () => void {
+  const appOrigin = options.appOrigin || window.location.origin;
+  const frameWindow = doc.defaultView;
+  const listenerOptions = { capture: true };
+
   const handleClick = (event: MouseEvent) => {
     if (
       event.button !== 0
@@ -123,23 +159,28 @@ export function startExternalLinkInterceptor(
       || event.shiftKey
     ) return;
 
-    const target = event.target instanceof Element ? event.target : null;
+    const target = eventTargetElement(event.target, doc);
     const anchor = target?.closest<HTMLAnchorElement>('a[href]');
-    const href = anchor?.getAttribute('href');
-    if (!target || !href || href.startsWith('javascript:') || href.startsWith('#')) return;
+    const href = resolveExternalLinkHref(anchor?.getAttribute('href'), {
+      appOrigin,
+      sourcePageUrl: options.sourcePageUrl,
+      documentBaseUrl: anchor?.ownerDocument.baseURI,
+      documentUrl: anchor?.ownerDocument.location?.href,
+    });
+    if (!href) return;
 
-    try {
-      const base = target.ownerDocument.location?.href || window.location.href;
-      const linkUrl = new URL(href, base);
-      if (linkUrl.origin === window.location.origin) return;
-
-      event.preventDefault();
-      onExternalHref(linkUrl.href);
-    } catch {}
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    onExternalHref(href);
   };
 
-  doc.addEventListener('click', handleClick);
-  return () => doc.removeEventListener('click', handleClick);
+  frameWindow?.addEventListener('click', handleClick, listenerOptions);
+  doc.addEventListener('click', handleClick, listenerOptions);
+  return () => {
+    frameWindow?.removeEventListener('click', handleClick, listenerOptions);
+    doc.removeEventListener('click', handleClick, listenerOptions);
+  };
 }
 
 export function applyReadingMode(doc: Document, contentRoot: HTMLElement): () => void {

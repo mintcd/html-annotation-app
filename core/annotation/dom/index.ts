@@ -1,13 +1,12 @@
 export {
-  cleanedHtml,
+  cleanHtml,
   createTextAnchor,
   createTextIndex,
   findBestContentNode,
   getRange,
   highlightRange,
-  rangeToHtml,
+  convertRangeToHtml,
   removeHighlights,
-  shortenHtml,
   type TextIndex,
 } from './dom.ts';
 

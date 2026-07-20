@@ -479,8 +479,8 @@ export function useAnnotationSession({
   useEffect(() => {
     const doc = snapshot.document;
     if (!doc || !onExternalHref) return;
-    return startExternalLinkInterceptor(doc, onExternalHref);
-  }, [onExternalHref, snapshot.document]);
+    return startExternalLinkInterceptor(doc, onExternalHref, { sourcePageUrl: pageUrl });
+  }, [onExternalHref, pageUrl, snapshot.document]);
 
   useEffect(() => {
     return () => {
