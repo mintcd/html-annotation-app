@@ -11,6 +11,11 @@ export {
 } from './dom.ts';
 
 export {
+  sanitizeAnnotationHref,
+  sanitizeAnnotationHtml,
+} from './sanitizeHtml.ts';
+
+export {
   highlightBoundingRect,
   highlightEndPosition,
   highlightStartPosition,

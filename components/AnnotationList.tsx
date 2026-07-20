@@ -9,6 +9,7 @@ import ActionDialog from "./ActionDialog";
 import CommentEditor from "./CommentEditor";
 import EmptyState from "./EmptyState";
 import { useAnnotationContextOptional } from "./Annotator.context";
+import { sanitizeAnnotationHtml } from "../core/annotation/dom";
 import styles from "./styles/AnnotationList.styles";
 
 type AnnotationListProps = {
@@ -33,15 +34,27 @@ type PromptState = {
 } | null;
 
 function annotationExcerpt(annotation: Annotation): string {
-  const source = annotation.html || annotation.text || "Untitled highlight";
+  const source = annotation.html
+    ? sanitizeAnnotationHtml(annotation.html)
+    : annotation.text || "Untitled highlight";
   const normalized = source.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   if (!normalized) return "Untitled highlight";
   if (normalized.length <= 180) return normalized;
   return `${normalized.slice(0, 177).trimEnd()}…`;
 }
 
-function annotationPreview(annotation: Annotation): string {
-  return annotation.html?.trim() || annotation.text || "Untitled highlight";
+function annotationPreview(annotation: Annotation): { content: string; allowHtml: boolean } {
+  if (annotation.html?.trim()) {
+    return {
+      content: sanitizeAnnotationHtml(annotation.html),
+      allowHtml: true,
+    };
+  }
+
+  return {
+    content: annotation.text || "Untitled highlight",
+    allowHtml: false,
+  };
 }
 
 export default function AnnotationList({
@@ -173,7 +186,7 @@ export default function AnnotationList({
                       <span style={styles.annotationCopy}>
                         <span style={styles.highlightLabel}>Highlight</span>
                         <span style={styles.excerpt}>
-                          <Latex>{preview}</Latex>
+                          <Latex allowHtml={preview.allowHtml}>{preview.content}</Latex>
                         </span>
                         {annotation.comment && (
                           <span style={styles.comment}>
@@ -251,10 +264,10 @@ export default function AnnotationList({
                 </div>
 
                 <blockquote style={styles.annotationText(annotation.color)}>
-                  {annotation.html ? (
-                    <Latex>{annotation.html}</Latex>
+                  {preview.allowHtml ? (
+                    <Latex allowHtml>{preview.content}</Latex>
                   ) : (
-                    <Latex>{annotation.text || "Untitled highlight"}</Latex>
+                    <Latex>{preview.content}</Latex>
                   )}
                 </blockquote>
 

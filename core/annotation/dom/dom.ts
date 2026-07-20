@@ -6,6 +6,7 @@ import {
   normalizeAnchorText,
   textAnchorsEqual,
 } from '../model/index.ts';
+import { sanitizeAnnotationHtml } from './sanitizeHtml.ts';
 
 export {
   findTextAnchorMatch,
@@ -202,7 +203,7 @@ export function cleanHtml(html: string): { html: string; mathSource?: string } {
   // Return the finalized HTML string and math source
   // Note: we intentionally do not re-run a global whitespace collapse here so
   // the math text is preserved exactly as inserted above.
-  const finalHtml = finalDiv.innerHTML.trim();
+  const finalHtml = sanitizeAnnotationHtml(finalDiv.innerHTML.trim());
   const mathSource = mathSources.length > 0 ? mathSources.join('\n') : undefined;
 
   return { html: finalHtml, mathSource };
