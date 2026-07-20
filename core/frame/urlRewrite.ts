@@ -1,7 +1,6 @@
 import { originToSlug } from '../utils/url.ts';
 
 export const FRAME_ROUTE_PREFIX = '/frame';
-export const LEGACY_FRAME_ROUTE_PREFIX = '/_frame';
 export const PROXY_ROUTE_PREFIX = '/proxy';
 
 const NON_FETCH_SCHEME_RE = /^(?:data|blob|mailto|tel|javascript|about):/i;
@@ -93,7 +92,7 @@ export function toProxyAssetPathFromFrameRequest(
 export function frameSiteFromPathname(pathname: string): string | null {
   const parts = pathname.split('/').filter(Boolean);
   const frameIndex = parts.findIndex(
-    (part) => `/${part}` === FRAME_ROUTE_PREFIX || `/${part}` === LEGACY_FRAME_ROUTE_PREFIX,
+    (part) => `/${part}` === FRAME_ROUTE_PREFIX,
   );
   return frameIndex >= 0 && parts.length > frameIndex + 1 ? parts[frameIndex + 1] : null;
 }

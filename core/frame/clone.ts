@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// Clone a page with browser runtime.
+
 import { cache } from 'react';
 import * as cheerio from 'cheerio';
 import * as css from 'css';
@@ -235,15 +236,15 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
 
   // Rewrite and hoist styles
   const headStyles: string[] = [];
-  $('head style').each((_: any, el: any) => {
+  $('head style').each((_, el) => {
     let styleContent = $(el).html() || '';
     styleContent = styleContent.replace(/font-family\s*:\s*([^;]+);/gi, 'font-family: $1 !important;');
     try {
       const parsed = css.parse(styleContent);
       if (parsed.stylesheet) {
-        parsed.stylesheet.rules.forEach((rule: any) => {
+        parsed.stylesheet.rules.forEach((rule) => {
           if (rule.type === 'rule' && rule.selectors) {
-            rule.selectors = rule.selectors.map((sel: any) => {
+            rule.selectors = rule.selectors.map((sel) => {
               let newSel = sel.replace(/\bbody\b/g, '.cloned-content');
               if (!newSel.includes('.cloned-content')) newSel = '.cloned-content ' + newSel;
               return newSel;
@@ -261,7 +262,7 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     headStyles.push(`<style>${styleContent}</style>`);
   }).remove();
 
-  $('head link[rel="stylesheet"]').each((_: any, el: any) => {
+  $('head link[rel="stylesheet"]').each((_, el) => {
     try {
       const href = $(el).attr('href');
       if (href) {
@@ -281,16 +282,16 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
     $body.prepend(headStyles[i]);
   }
 
-  $('body style').each((_: any, el: any) => {
+  $('body style').each((_, el) => {
     try {
       let styleContent = $(el).html() || '';
       try { styleContent = rewriteCssUrls(styleContent, clonedBase, proxiedUrl); } catch { }
       try {
         const parsed = css.parse(styleContent);
         if (parsed.stylesheet) {
-          parsed.stylesheet.rules.forEach((rule: any) => {
+          parsed.stylesheet.rules.forEach((rule) => {
             if (rule.type === 'rule' && rule.selectors) {
-              rule.selectors = rule.selectors.map((sel: any) => {
+              rule.selectors = rule.selectors.map((sel) => {
                 let newSel = sel.replace(/\bbody\b/g, '.cloned-content');
                 if (!newSel.includes('.cloned-content')) newSel = '.cloned-content ' + newSel;
                 return newSel;
@@ -325,11 +326,11 @@ export const getClonedPage = cache(async (url: string): Promise<ClonedPage> => {
       $(el).remove();
     }
   });
-  // Strip all remaining body hint/resource links — they are either redundant
+  // Strip all remaining body hint/resource links - they are either redundant
   // (already handled above) or would cause React 19 hoisting warnings.
   $('body link[rel~="prefetch"], body link[rel~="modulepreload"], body link[rel~="preconnect"], body link[rel~="dns-prefetch"]').remove();
   // Promote any body stylesheet links (non-standard but some sites do it).
-  $('body link[rel="stylesheet"]').each((_: any, el: any) => {
+  $('body link[rel="stylesheet"]').each((_, el) => {
     const href = $(el).attr('href');
     if (href) {
       try { $(el).attr('href', proxiedUrl(resolveUrl(clonedBase, href))); } catch { }

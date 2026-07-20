@@ -74,7 +74,6 @@ export function proxy(req: NextRequest) {
   // 2) Fallback: detect iframe navigation (sec-fetch-dest) or explicit flag
   const isIframe =
     req.headers.get('sec-fetch-dest') === 'iframe' ||
-    url.searchParams.has('_frame') ||
     url.searchParams.has('frame');
 
   if (!isIframe) return NextResponse.next();
@@ -89,5 +88,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|_next|api(?:/|$)|proxy(?:/|$)|frame(?:/|$)|_proxy(?:/|$)|_frame(?:/|$)).*)'],
+  matcher: ['/((?!_next/static|_next/image|_next|api(?:/|$)|proxy(?:/|$)|frame(?:/|$)).*)'],
 };

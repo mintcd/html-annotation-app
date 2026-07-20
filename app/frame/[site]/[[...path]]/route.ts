@@ -337,12 +337,6 @@ export async function GET(
     $(el).text(rewriteCssUrls(style, base, proxiedFrameResourceUrl));
   });
 
-  // ── 4. Previously we injected a runtime content script here to rewrite
-  // root-relative URLs inside the iframe. That work is now handled by
-  // middleware which rewrites asset requests to /proxy/{site}/... based on
-  // the iframe referer, so we no longer inject the runtime interceptor.
-
-  // ── 5. Return ─────────────────────────────────────────────────────────
   const rewritten = $.html();
   return new Response(rewritten, {
     status: 200,
