@@ -6,16 +6,15 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
   useSyncEngine,
+  type SyncEnginePhase,
 } from "@mintcd/sync-engine/client/react";
 import type {
   SyncDatabase,
-  SyncClientSnapshot,
 } from "@mintcd/sync-engine/client";
 import { finalConfig } from "@/app/sync/sync.generated";
 import {
@@ -29,9 +28,6 @@ import type {
 } from "@/app/sync/sync.generated";
 
 type ReplicaSchema = typeof replicaSchema;
-
-const MAX_RETRYABLE_SYNC_ATTEMPTS = 5;
-const RETRYABLE_SYNC_BASE_DELAY_MS = 120;
 
 type SyncStatusResult = {
   readonly status: string;
@@ -52,7 +48,7 @@ type SyncRowsResult<Table extends TableName> = {
 export interface AppSyncRuntime {
   readonly db: SyncDatabase<ReplicaSchema>;
   readonly ready: boolean;
-  readonly phase: "opening" | SyncClientSnapshot<ReplicaSchema>["phase"];
+  readonly phase: SyncEnginePhase;
   readonly pendingCount: number;
   readonly revision: number;
   readonly error: unknown;
@@ -68,17 +64,6 @@ let currentRuntime: AppSyncRuntime | undefined;
 export function SyncEngineProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState(() => syncSessionForUserId(undefined));
   const [sessionReady, setSessionReady] = useState(false);
-  const [clientId] = useState(readOrCreateClientId);
-  const rawSyncRef = useRef<() => Promise<void>>(() => (
-    Promise.reject(new Error("sync engine client is not ready"))
-  ));
-  const syncQueueRef = useRef<{
-    requested: boolean;
-    promise: Promise<void> | undefined;
-  }>({
-    requested: false,
-    promise: undefined,
-  });
 
   const loadSession = useCallback(async (): Promise<SyncSession> => {
     const response = await fetch("/api/auth/session", {
@@ -129,9 +114,10 @@ export function SyncEngineProvider({ children }: { children: ReactNode }) {
   const sync = useSyncEngine({
     config: finalConfig,
     streamId: session.streamId,
-    clientId,
+    enabled: sessionReady,
     credentials: "same-origin",
     initialSync: true,
+    syncOnMutation: true,
     serviceWorker: {
       syncOnBackgroundMessage: false,
       syncOnMutation: false,
@@ -143,40 +129,6 @@ export function SyncEngineProvider({ children }: { children: ReactNode }) {
       console.error("Sync failed", error);
     },
   });
-
-  useEffect(() => {
-    rawSyncRef.current = sync.sync;
-  }, [sync.sync]);
-
-  const queuedSync = useCallback(() => {
-    syncQueueRef.current.requested = true;
-
-    if (syncQueueRef.current.promise !== undefined) {
-      return syncQueueRef.current.promise;
-    }
-
-    const promise = (async () => {
-      while (syncQueueRef.current.requested) {
-        syncQueueRef.current.requested = false;
-        await syncWithRetry(() => rawSyncRef.current());
-      }
-    })().finally(() => {
-      if (syncQueueRef.current.promise === promise) {
-        syncQueueRef.current.promise = undefined;
-      }
-    });
-
-    syncQueueRef.current.promise = promise;
-    return promise;
-  }, []);
-
-  useEffect(() => {
-    if (sync.ready) {
-      void queuedSync().catch((error) => {
-        console.error("Sync failed", error);
-      });
-    }
-  }, [queuedSync, sync.ready, session.streamId]);
 
   const runtime = useMemo<AppSyncRuntime>(() => {
     const pendingCount =
@@ -191,10 +143,9 @@ export function SyncEngineProvider({ children }: { children: ReactNode }) {
       session,
       sessionReady,
       refreshSession,
-      sync: queuedSync,
+      sync: sync.sync,
     };
   }, [
-    queuedSync,
     refreshSession,
     session,
     sessionReady,
@@ -205,6 +156,7 @@ export function SyncEngineProvider({ children }: { children: ReactNode }) {
     sync.phase,
     sync.ready,
     sync.revision,
+    sync.sync,
   ]);
 
   useEffect(() => {
@@ -275,54 +227,3 @@ export function useSyncRows<Table extends TableName>(
   }, [revision, runtime.db, runtime.ready, tableName]);
 }
 
-function readOrCreateClientId(): string {
-  if (typeof window === "undefined") {
-    return "server-render";
-  }
-
-  const key = "html-annotation-sync-client-id";
-  const existing = window.localStorage.getItem(key);
-  if (existing !== null && existing !== "") {
-    return existing;
-  }
-
-  const created = crypto.randomUUID();
-  window.localStorage.setItem(key, created);
-  return created;
-}
-
-async function syncWithRetry(sync: () => Promise<void>): Promise<void> {
-  for (let attempt = 0; attempt < MAX_RETRYABLE_SYNC_ATTEMPTS; attempt += 1) {
-    try {
-      await sync();
-      return;
-    } catch (error) {
-      if (
-        attempt === MAX_RETRYABLE_SYNC_ATTEMPTS - 1
-        || !isRetryableSyncConflict(error)
-      ) {
-        throw error;
-      }
-
-      await wait(retryDelayMs(attempt));
-    }
-  }
-}
-
-function isRetryableSyncConflict(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("D1 sync stream changed while committing")
-    || message.includes("retry the sync request");
-}
-
-function retryDelayMs(attempt: number): number {
-  const exponentialDelay = RETRYABLE_SYNC_BASE_DELAY_MS * 2 ** attempt;
-  const jitter = Math.floor(Math.random() * RETRYABLE_SYNC_BASE_DELAY_MS);
-  return exponentialDelay + jitter;
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}

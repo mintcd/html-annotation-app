@@ -14,7 +14,7 @@
     "test": "node --test tests/*.test.ts"
   },
   "dependencies": {
-    "@mintcd/sync-engine": "^1.0.0",
+    "@mintcd/sync-engine": "^1.1.0",
     "cheerio": "^1.0.0",
     "css": "^3.0.0",
     "framer-motion": "^12.23.22",

@@ -1,15 +1,19 @@
+import {
+  getD1RowSyncStateRows,
+  readD1RowSyncState,
+  type D1DatabaseLike,
+} from "@mintcd/sync-engine/next";
+import type { ReplicaDatabaseState } from "@mintcd/sync-engine/client";
+import {
+  replicaSchema,
+  type TableName,
+} from "@/app/sync/sync.generated";
 import { getEnv } from "../utils/env";
 import type { SyncSession } from "./syncIdentity";
 
 const SYNC_TABLE_PREFIX = "html_annotation_sync";
 
-type SyncStateRow = {
-  readonly materialized_state_json: string;
-};
-
-type SyncMaterializedState = {
-  readonly tables?: Record<string, Record<string, Record<string, unknown>>>;
-};
+type SyncMaterializedState = ReplicaDatabaseState;
 
 export async function readSyncStreamState(
   session: SyncSession,
@@ -18,35 +22,25 @@ export async function readSyncStreamState(
     return null;
   }
 
-  const row = await getEnv().DB.prepare(
-    `SELECT materialized_state_json
-     FROM ${SYNC_TABLE_PREFIX}_streams
-     WHERE stream_id = ?`,
-  )
-    .bind(session.streamId)
-    .first<SyncStateRow>();
-
-  if (row === null) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(row.materialized_state_json) as SyncMaterializedState;
-  } catch (error) {
-    console.error("Failed to parse sync stream materialized state", error);
-    return null;
-  }
+  return readD1RowSyncState({
+    database: getEnv().DB as unknown as D1DatabaseLike,
+    streamId: session.streamId,
+    schema: replicaSchema,
+    tablePrefix: SYNC_TABLE_PREFIX,
+  });
 }
 
 export function getSyncStateRows<Row extends Record<string, unknown>>(
   state: SyncMaterializedState | null,
   tableName: string,
 ): Row[] {
-  const table = state?.tables?.[tableName];
-  if (table === undefined) {
-    return [];
-  }
-  return Object.values(table) as Row[];
+  return [
+    ...getD1RowSyncStateRows(
+      replicaSchema,
+      state,
+      tableName as TableName,
+    ),
+  ] as unknown as Row[];
 }
 
 export function findSyncStateRow<Row extends Record<string, unknown>>(
