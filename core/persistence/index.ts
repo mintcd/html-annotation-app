@@ -11,6 +11,7 @@ export {
   syncTimestamp,
   updateAnnotationRow,
   updatePageRow,
+  updateWebsiteRow,
 } from './syncData';
 
 export {

@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState, useCallback, useEffect, RefObject, PointerEvent as ReactPointerEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAnnotationContext } from "../contexts/Annotator.context";
+import { useAnnotationContext } from "./Annotator.context";
 import { useMobile, useHotkey, useClickOutside } from "../hooks";
 import AnnotationList from "./AnnotationList";
 import { BoxList, DarkMode, LightMode, Sort, PasteHtml, ReadingMode, Refresh, Times } from "../app/icons";

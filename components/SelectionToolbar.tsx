@@ -4,9 +4,9 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { Highlighter } from "../app/icons";
 import { Button } from "./design-system/button";
 import useMenuStyles from "./styles/MenuOnRange.styles";
-import { useAnnotationContext } from "../contexts/Annotator.context";
+import { useAnnotationContext } from "./Annotator.context";
 import { useDebouncedCallback, useMobile } from "@/hooks";
-import { useAnnotatorOverlayOptional } from "@/contexts/AnnotatorOverlay.context";
+import { useAnnotatorOverlayOptional } from "@/components/AnnotatorOverlay.context";
 import { cleanHtml, convertRangeToHtml, createTextAnchor, highlightRange } from "@/core/annotation/dom";
 
 export default function SelectionToolbar() {

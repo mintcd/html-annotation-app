@@ -5,8 +5,8 @@ import {
   hashPassword,
   readCredentials,
   sessionResponse,
+  syncSessionForUser,
 } from "../_shared";
-import { syncSessionForUserId } from "@/core/persistence/syncIdentity";
 
 export const runtime = "edge";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
       throw new AuthRequestError("Invalid username or password", 401);
     }
 
-    return sessionResponse(syncSessionForUserId(user.id));
+    return sessionResponse(syncSessionForUser(user));
   } catch (error) {
     return errorResponse(error);
   }

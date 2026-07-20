@@ -1,11 +1,11 @@
 import { getEnv } from "@/core/utils/env";
-import { syncSessionForUserId } from "@/core/persistence/syncIdentity";
 import {
   AuthRequestError,
   errorResponse,
   hashPassword,
   readCredentials,
   sessionResponse,
+  syncSessionForUser,
   userIdForUsername,
 } from "../_shared";
 
@@ -30,7 +30,13 @@ export async function POST(request: Request): Promise<Response> {
       throw error;
     }
 
-    return sessionResponse(syncSessionForUserId(userId), { status: 201 });
+    return sessionResponse(
+      syncSessionForUser({
+        id: userId,
+        username: credentials.username,
+      }),
+      { status: 201 },
+    );
   } catch (error) {
     return errorResponse(error);
   }

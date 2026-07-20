@@ -8,7 +8,7 @@ import { Comment, Edit, Save, Times, Trash } from "../app/icons";
 import ActionDialog from "./ActionDialog";
 import CommentEditor from "./CommentEditor";
 import EmptyState from "./EmptyState";
-import { useAnnotationContextOptional } from "../contexts/Annotator.context";
+import { useAnnotationContextOptional } from "./Annotator.context";
 import styles from "./styles/AnnotationList.styles";
 
 type AnnotationListProps = {

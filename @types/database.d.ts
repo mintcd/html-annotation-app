@@ -1,6 +1,7 @@
 type Website = {
   id: string;
   origin: string;
+  title?: string | null;
   created_at: string;
   updated_at: string;
 }

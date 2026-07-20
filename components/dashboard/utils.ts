@@ -50,7 +50,7 @@ export function groupPagesBySite(pages: AnnotationPage[]): PageGroup[] {
     try {
       const url = new URL(page.url);
       key = url.origin;
-      label = url.hostname.replace(/^www\./, "");
+      label = page.siteTitle || url.hostname.replace(/^www\./, "");
     } catch {
       // Keep invalid legacy rows visible rather than dropping them.
     }
@@ -58,8 +58,9 @@ export function groupPagesBySite(pages: AnnotationPage[]): PageGroup[] {
     const existing = map.get(key);
     if (existing) {
       existing.pages.push(page);
+      if (!existing.logoSrc && page.siteLogoSrc) existing.logoSrc = page.siteLogoSrc;
     } else {
-      map.set(key, { key, label, pages: [page] });
+      map.set(key, { key, label, logoSrc: page.siteLogoSrc, pages: [page] });
     }
   });
 

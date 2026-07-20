@@ -75,9 +75,12 @@ export function SyncEngineProvider({ children }: { children: ReactNode }) {
       throw new Error(`session endpoint returned HTTP ${response.status}`);
     }
     const body = (await response.json()) as Partial<SyncSession>;
-    return syncSessionForUserId(
+    const session = syncSessionForUserId(
       typeof body.userId === "string" ? body.userId : undefined,
     );
+    return typeof body.username === "string" && body.username.trim() !== ""
+      ? { ...session, username: body.username }
+      : session;
   }, []);
 
   const refreshSession = useCallback(async (): Promise<SyncSession> => {
@@ -226,4 +229,3 @@ export function useSyncRows<Table extends TableName>(
     }
   }, [revision, runtime.db, runtime.ready, tableName]);
 }
-

@@ -1,20 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiLayers,
   FiLock,
   FiLogIn,
-  FiMenu,
   FiUser,
   FiUserPlus,
 } from 'react-icons/fi';
-import { useMobile } from "../hooks";
 import ActionDialog from './ActionDialog';
 import { dashboardCss } from './styles/Dashboard.styles';
 import { normalizeUrl } from '../core/utils/url';
-import DashboardControls from "./dashboard/DashboardControls";
 import PageDetail from "./dashboard/PageDetail";
 import PageLibrary from "./dashboard/PageLibrary";
 import type { AnnotationPage, EditingCommentState } from "./dashboard/types";
@@ -29,12 +25,24 @@ import {
   normalizeAnnotationRow,
   syncTimestamp,
   updateAnnotationRow,
+  updatePageRow,
+  updateWebsiteRow,
   type AppSyncRuntime,
   useSyncRows,
   useSyncRuntime,
   useSyncStatus,
 } from '../core/persistence';
-import { deleteFrameBundle } from '../core/frame/cache';
+import { deleteFrameBundle, ensureFrameCacheReady } from '../core/frame/cache';
+
+type SiteMetadata = {
+  title?: string;
+  logoUrl?: string;
+};
+
+type WebsiteMetadataResponse = {
+  title?: unknown;
+  logoUrl?: unknown;
+};
 
 async function navigateToPage(
   rawUrl: string,
@@ -223,14 +231,64 @@ function AuthDashboard({ sync }: { sync: DashboardSync }) {
 function AuthenticatedDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  const { isMobile } = useMobile();
   const sync = useSyncStatus();
   const runtime = useSyncRuntime();
   const pages = useSyncRows('pages');
   const annotations = useSyncRows('annotations');
+  const websites = useSyncRows('websites');
+  const [siteMetadataByOrigin, setSiteMetadataByOrigin] = useState<Record<string, SiteMetadata>>({});
+  const metadataOriginsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    void ensureFrameCacheReady();
+  }, []);
+
+  useEffect(() => {
+    for (const website of websites.data ?? []) {
+      const origin = toOrigin(String(website.origin));
+      if (!origin || metadataOriginsRef.current.has(origin)) continue;
+
+      metadataOriginsRef.current.add(origin);
+      void fetchWebsiteMetadata(origin)
+        .then(async (metadata) => {
+          setSiteMetadataByOrigin((previous) => ({
+            ...previous,
+            [origin]: metadata,
+          }));
+
+          const fetchedTitle = metadata.title?.trim();
+          const currentTitle = stringValue(website.title);
+          if (!fetchedTitle || currentTitle) return;
+
+          try {
+            await updateWebsiteRow(String(website.id), {
+              title: fetchedTitle,
+              updated_at: syncTimestamp(),
+            }, runtime);
+          } catch (error) {
+            console.warn('Failed to save fetched website title', error);
+          }
+        })
+        .catch((error) => {
+          console.debug('Failed to fetch website metadata', error);
+          setSiteMetadataByOrigin((previous) => ({
+            ...previous,
+            [origin]: {},
+          }));
+        });
+    }
+  }, [runtime, websites.data]);
+
+  const websitesByOrigin = useMemo(() => {
+    const map = new Map<string, Website>();
+    for (const website of websites.data ?? []) {
+      const origin = toOrigin(String(website.origin));
+      if (origin) map.set(origin, website as Website);
+    }
+    return map;
+  }, [websites.data]);
 
   const annotationPages = useMemo<AnnotationPage[]>(() => {
     const annotationRows = (annotations.data ?? []).map((row) =>
@@ -241,20 +299,30 @@ function AuthenticatedDashboard() {
       const pageAnnotations = annotationRows.filter((annotation) =>
         annotation.page_id === page.id || annotation.page_id === page.url,
       );
+      const origin = toOrigin(page.url);
+      const website = origin ? websitesByOrigin.get(origin) : undefined;
+      const siteMetadata = origin ? siteMetadataByOrigin[origin] : undefined;
+      const siteTitle = stringValue(website?.title) ?? siteMetadata?.title;
+      const siteLogoSrc = siteMetadata?.logoUrl
+        ? websiteLogoSrc(siteMetadata.logoUrl)
+        : undefined;
+
       return {
         url: page.url,
         filename: `${page.id}.json`,
         timestamp: page.created_at,
         title: page.title || undefined,
+        siteTitle,
+        siteLogoSrc,
         count: pageAnnotations.length,
         annotations: pageAnnotations,
         blobUrl: '',
         uploadedAt: page.updated_at,
       };
     }).sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
-  }, [annotations.data, pages.data]);
+  }, [annotations.data, pages.data, siteMetadataByOrigin, websitesByOrigin]);
 
-  const dataError = pages.error || annotations.error;
+  const dataError = pages.error || annotations.error || websites.error;
 
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
   const [editingComment, setEditingComment] = useState<EditingCommentState | null>(null);
@@ -273,13 +341,14 @@ function AuthenticatedDashboard() {
     const focusSearch = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        searchInputRef.current?.focus();
+        if (selectedUrl) setSelectedUrl(null);
+        window.requestAnimationFrame(() => searchInputRef.current?.focus());
       }
     };
 
     window.addEventListener('keydown', focusSearch);
     return () => window.removeEventListener('keydown', focusSearch);
-  }, []);
+  }, [selectedUrl]);
 
   const pagesByUrl = useMemo(() => {
     const map: Record<string, AnnotationPage> = {};
@@ -295,6 +364,7 @@ function AuthenticatedDashboard() {
     const query = searchQuery.toLowerCase();
     return annotationPages.filter((page) => {
       if (page.title?.toLowerCase().includes(query)) return true;
+      if (page.siteTitle?.toLowerCase().includes(query)) return true;
       if (page.url.toLowerCase().includes(query)) return true;
 
       return page.annotations.some((annotation) =>
@@ -418,6 +488,19 @@ function AuthenticatedDashboard() {
     }
   }
 
+  async function savePageTitle(pageUrl: string, title: string) {
+    const normalizedPageUrl = normalizeUrl(pageUrl);
+    const pageRow = (pages.data ?? []).find((page) => normalizeUrl(page.url) === normalizedPageUrl);
+    if (!pageRow) {
+      throw new Error('Page not found');
+    }
+
+    await updatePageRow(String(pageRow.id), {
+      title: title.trim(),
+      updated_at: syncTimestamp(),
+    }, runtime);
+  }
+
   async function saveAndNavigateToPage(rawUrl: string) {
     try {
       const absoluteUrl = toAbsoluteUrl(rawUrl);
@@ -459,7 +542,6 @@ function AuthenticatedDashboard() {
       }
 
       await sync.refreshSession();
-      setSidebarOpen(false);
     } catch (error) {
       setSignOutError(error instanceof Error ? error.message : 'Unable to log out');
     } finally {
@@ -473,27 +555,6 @@ function AuthenticatedDashboard() {
     }
   }, [annotations.loading, pages.loading, selectedPage, selectedUrl]);
 
-  const controlPanel = (
-    <DashboardControls
-      isMobile={isMobile}
-      totalAnnotations={totalAnnotations}
-      totalUrls={totalUrls}
-      enterUrl={enterUrl}
-      searchQuery={searchQuery}
-      searchInputRef={searchInputRef}
-      syncStatus={syncStatus}
-      syncTone={syncTone}
-      userId={String(sync.session.userId)}
-      signingOut={signingOut}
-      signOutError={signOutError}
-      onAnnotateSubmit={handleAnnotateSubmit}
-      onEnterUrlChange={setEnterUrl}
-      onSearchQueryChange={setSearchQuery}
-      onSignOut={() => void signOut()}
-      onClose={() => setSidebarOpen(false)}
-    />
-  );
-
   return (
     <div className="dashboard-shell">
       <style>{dashboardCss}</style>
@@ -505,49 +566,7 @@ function AuthenticatedDashboard() {
         </div>
       )}
 
-      <AnimatePresence>
-        {isMobile && sidebarOpen && (
-          <>
-            <motion.button
-              type="button"
-              className="dashboard-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close controls"
-            />
-            <motion.aside
-              className="dashboard-sidebar dashboard-mobile-sidebar"
-              initial={{ x: '-100%', opacity: 0.6 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '-100%', opacity: 0.6 }}
-              transition={{ type: 'spring', stiffness: 360, damping: 34 }}
-            >
-              {controlPanel}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {!isMobile && <aside className="dashboard-sidebar">{controlPanel}</aside>}
-
       <main className="dashboard-main">
-        {isMobile && (
-          <header className="dashboard-mobile-header">
-            <button
-              type="button"
-              className="dashboard-icon-button"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open dashboard controls"
-            >
-              <FiMenu />
-            </button>
-            <span className="dashboard-mobile-title">Annotation Studio</span>
-            <span style={{ width: '2.35rem' }} aria-hidden="true" />
-          </header>
-        )}
-
         {selectedPage ? (
           <PageDetail
             page={selectedPage}
@@ -556,6 +575,7 @@ function AuthenticatedDashboard() {
             onBack={() => setSelectedUrl(null)}
             onOpenAnnotator={(pageUrl) => void saveAndNavigateToPage(pageUrl)}
             onDeletePage={deletePage}
+            onSaveTitle={savePageTitle}
             onDeleteAnnotation={deleteAnnotation}
             onStartEditingComment={startEditingComment}
             onCancelEditingComment={cancelEditingComment}
@@ -567,13 +587,20 @@ function AuthenticatedDashboard() {
             totalAnnotations={totalAnnotations}
             totalUrls={totalUrls}
             searchQuery={searchQuery}
-            loading={pages.loading || annotations.loading}
+            loading={pages.loading || annotations.loading || websites.loading}
             enterUrl={enterUrl}
+            searchInputRef={searchInputRef}
+            syncStatus={syncStatus}
+            syncTone={syncTone}
+            accountLabel={sync.session.username ?? String(sync.session.userId)}
+            signingOut={signingOut}
+            signOutError={signOutError}
             onAnnotateSubmit={handleAnnotateSubmit}
             onEnterUrlChange={setEnterUrl}
+            onSearchQueryChange={setSearchQuery}
+            onSignOut={() => void signOut()}
             onSelectPage={(normalizedUrl) => {
               setSelectedUrl(normalizedUrl);
-              setSidebarOpen(false);
             }}
           />
         )}
@@ -602,4 +629,40 @@ function AuthenticatedDashboard() {
       )}
     </div>
   );
+}
+
+async function fetchWebsiteMetadata(origin: string): Promise<SiteMetadata> {
+  const params = new URLSearchParams({ origin });
+  const response = await fetch(`/api/website-metadata?${params.toString()}`, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    return {};
+  }
+
+  const body = await response.json().catch(() => ({})) as WebsiteMetadataResponse;
+  return {
+    title: stringValue(body.title),
+    logoUrl: stringValue(body.logoUrl),
+  };
+}
+
+function toOrigin(rawUrl: string): string | null {
+  try {
+    return new URL(rawUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function websiteLogoSrc(logoUrl: string): string {
+  const params = new URLSearchParams({ url: logoUrl });
+  return `/api/website-logo?${params.toString()}`;
 }

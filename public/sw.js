@@ -13,10 +13,14 @@ importScripts('/sw.sync.js');
   const FRAME_CACHE_VERSION = 'v1';
   const FRAME_CACHE_PREFIX = `annotation-frame-${FRAME_CACHE_VERSION}-`;
   const FRAME_CACHE_FAMILY = 'annotation-frame-v';
+  const LOGO_CACHE_VERSION = 'v1';
+  const LOGO_CACHE = `annotation-site-logo-${LOGO_CACHE_VERSION}`;
+  const LOGO_CACHE_FAMILY = 'annotation-site-logo-';
   const CONTROL_CACHE = `annotation-frame-control-${FRAME_CACHE_VERSION}`;
   const CONTROL_CACHE_FAMILY = 'annotation-frame-control-';
   const LEGACY_CACHE = 'frames-cache-v1';
   const FRAME_PATH_PREFIX = '/frame/';
+  const LOGO_PATH = '/api/website-logo';
   const REFRESH_HEADER = 'x-annotation-frame-refresh';
   const FRAME_ERROR_HEADER = 'x-annotation-frame-error';
   const DEFAULT_REFRESH_WINDOW_MS = 60_000;
@@ -100,9 +104,39 @@ importScripts('/sw.sync.js');
       return;
     }
 
+    if (isWebsiteLogoUrl(request.url)) {
+      event.respondWith(serveWebsiteLogo(event));
+      return;
+    }
+
     if (!CACHEABLE_DESTINATIONS.has(request.destination)) return;
     event.respondWith(servePotentialFrameAsset(event));
   });
+
+  async function serveWebsiteLogo(event) {
+    let cache;
+    try {
+      cache = await caches.open(LOGO_CACHE);
+    } catch {
+      return fetch(event.request);
+    }
+
+    const cached = await matchSafely(cache, event.request);
+    if (cached) {
+      event.waitUntil(refreshWebsiteLogo(cache, event.request).catch(() => undefined));
+      return cached;
+    }
+
+    return refreshWebsiteLogo(cache, event.request);
+  }
+
+  async function refreshWebsiteLogo(cache, request) {
+    const response = await fetch(request);
+    if (canStoreLogo(response)) {
+      await putSafely(cache, request, response.clone());
+    }
+    return response;
+  }
 
   async function servePotentialFrameAsset(event) {
     let client;
@@ -193,6 +227,14 @@ importScripts('/sw.sync.js');
     return response.status !== 206 && response.headers.get('vary') !== '*';
   }
 
+  function canStoreLogo(response) {
+    const contentType = response.headers.get('content-type') || '';
+    return response.ok
+      && response.status !== 206
+      && response.headers.get('vary') !== '*'
+      && contentType.toLowerCase().startsWith('image/');
+  }
+
   async function matchSafely(cache, request) {
     try {
       return await cache.match(request);
@@ -277,7 +319,10 @@ importScripts('/sw.sync.js');
         && !name.startsWith(FRAME_CACHE_PREFIX);
       const isOldControlCache = name.startsWith(CONTROL_CACHE_FAMILY)
         && name !== CONTROL_CACHE;
+      const isOldLogoCache = name.startsWith(LOGO_CACHE_FAMILY)
+        && name !== LOGO_CACHE;
       return name === LEGACY_CACHE || isOldVersion || isOldControlCache
+        || isOldLogoCache
         ? caches.delete(name)
         : Promise.resolve(false);
     }));
@@ -300,6 +345,17 @@ importScripts('/sw.sync.js');
       const url = new URL(value, self.location.origin);
       return url.origin === self.location.origin
         && url.pathname.startsWith(FRAME_PATH_PREFIX);
+    } catch {
+      return false;
+    }
+  }
+
+  function isWebsiteLogoUrl(value) {
+    try {
+      const url = new URL(value, self.location.origin);
+      return url.origin === self.location.origin
+        && url.pathname === LOGO_PATH
+        && url.searchParams.has('url');
     } catch {
       return false;
     }

@@ -3,6 +3,8 @@ export interface AnnotationPage {
   filename: string;
   timestamp: string;
   title?: string;
+  siteTitle?: string;
+  siteLogoSrc?: string;
   count: number;
   annotations: Annotation[];
   blobUrl: string;
@@ -18,5 +20,6 @@ export type EditingCommentState = {
 export type PageGroup = {
   key: string;
   label: string;
+  logoSrc?: string;
   pages: AnnotationPage[];
 };

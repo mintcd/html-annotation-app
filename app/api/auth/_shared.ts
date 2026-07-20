@@ -81,6 +81,23 @@ export async function findUserByUsername(username: string): Promise<UserRow | nu
     .first<UserRow>();
 }
 
+export async function findUserById(userId: string): Promise<UserRow | null> {
+  return getEnv().DB.prepare(
+    "SELECT id, username, password_hash FROM users WHERE id = ? LIMIT 1",
+  )
+    .bind(userId)
+    .first<UserRow>();
+}
+
+export function syncSessionForUser(
+  user: Pick<UserRow, "id" | "username">,
+): SyncSession {
+  return {
+    ...syncSessionForUserId(user.id),
+    username: user.username,
+  };
+}
+
 export function sessionResponse(
   session: SyncSession,
   init: ResponseInit = {},

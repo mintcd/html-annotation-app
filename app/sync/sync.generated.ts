@@ -202,11 +202,16 @@ export const finalConfig = defineGeneratedNextSyncConfig({
             "affinity": "text",
             "nullable": false,
             "generated": false
+          },
+          "title": {
+            "affinity": "text",
+            "nullable": true,
+            "generated": false
           }
         }
       }
     },
-    "schemaHash": "sha256:fbdee8edfe62e29dcf8d596fc019acf2e144a8c669327eb8f40b22ccb7f6779d"
+    "schemaHash": "sha256:16aa828f86d8e733e9d7e5371b1e6041aa962258d1658ac3a0d34038d112766c"
   }
 } as const);
 

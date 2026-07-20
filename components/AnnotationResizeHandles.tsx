@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAnnotationContext } from '../contexts/Annotator.context';
-import { useAnnotatorOverlayOptional } from '../contexts/AnnotatorOverlay.context';
+import { useAnnotationContext } from './Annotator.context';
+import { useAnnotatorOverlayOptional } from './AnnotatorOverlay.context';
 import { Save, Times } from '../app/icons';
 import { Button } from './design-system/button';
 import { useCoarsePointer } from '../hooks';

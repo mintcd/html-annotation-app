@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkey, useMobile } from "../hooks";
 import colorPickerStyles from "./styles/ColorPicker.styles";
-import { useAnnotationContextOptional } from "../contexts/Annotator.context";
+import { useAnnotationContextOptional } from "./Annotator.context";
 
 type ColorPickerProps = {
   onColorSelect: (color: string) => void;

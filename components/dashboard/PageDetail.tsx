@@ -1,12 +1,17 @@
 "use client";
 
+import Image from "next/image";
+import { useState, type FormEvent } from "react";
 import {
   FiArrowLeft,
+  FiCheck,
   FiClock,
+  FiEdit2,
   FiExternalLink,
   FiGlobe,
   FiLayers,
   FiTrash2,
+  FiX,
 } from "react-icons/fi";
 import AnnotationList from "../AnnotationList";
 import type { AnnotationPage, EditingCommentState } from "./types";
@@ -19,6 +24,7 @@ type PageDetailProps = {
   onBack: () => void;
   onOpenAnnotator: (pageUrl: string) => void;
   onDeletePage: (pageUrl: string, filename: string) => void;
+  onSaveTitle: (pageUrl: string, title: string) => Promise<void>;
   onDeleteAnnotation: (pageUrl: string, annotationId: string) => void;
   onStartEditingComment: (pageUrl: string, annotationId: string, comment: string) => void;
   onCancelEditingComment: () => void;
@@ -32,13 +38,45 @@ export default function PageDetail({
   onBack,
   onOpenAnnotator,
   onDeletePage,
+  onSaveTitle,
   onDeleteAnnotation,
   onStartEditingComment,
   onCancelEditingComment,
   onSaveComment,
 }: PageDetailProps) {
   const location = getPageLocation(page.url);
-  const title = page.title || location.host;
+  const title = page.title || page.siteTitle || location.host;
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(title);
+  const [savingTitle, setSavingTitle] = useState(false);
+  const showLogo = page.siteLogoSrc && !logoFailed;
+
+  function startTitleEdit() {
+    setDraftTitle(title);
+    setEditingTitle(true);
+  }
+
+  function cancelTitleEdit() {
+    setDraftTitle(title);
+    setEditingTitle(false);
+  }
+
+  async function submitTitleEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextTitle = draftTitle.trim();
+    setSavingTitle(true);
+    try {
+      await onSaveTitle(page.url, nextTitle);
+      setDraftTitle(nextTitle || title);
+      setEditingTitle(false);
+    } catch (error) {
+      alert(`Error saving title: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setSavingTitle(false);
+    }
+  }
 
   return (
     <>
@@ -49,18 +87,79 @@ export default function PageDetail({
             All pages
           </button>
 
-          <div className="dashboard-eyebrow-row">
-            <p className="dashboard-eyebrow">
-              <FiGlobe aria-hidden="true" />
-              Selected page
-            </p>
-          </div>
-
           <div className="dashboard-hero-layout">
             <div className="dashboard-hero-copy">
-              <h2 className="dashboard-hero-title">{title}</h2>
-              <p className="dashboard-hero-url" title={page.url}>
-                <FiExternalLink aria-hidden="true" />
+              <div className="dashboard-hero-title-row">
+                {showLogo ? (
+                  <Image
+                    className="dashboard-hero-logo"
+                    src={page.siteLogoSrc as string}
+                    alt=""
+                    width={38}
+                    height={38}
+                    priority
+                    unoptimized
+                    onError={() => setLogoFailed(true)}
+                  />
+                ) : (
+                  <span className="dashboard-hero-logo dashboard-hero-logo-fallback" aria-hidden="true">
+                    <FiGlobe />
+                  </span>
+                )}
+                <div className="dashboard-hero-title-wrap">
+                  {editingTitle ? (
+                    <form className="dashboard-title-edit-form" onSubmit={submitTitleEdit}>
+                      <input
+                        className="dashboard-input dashboard-title-input"
+                        value={draftTitle}
+                        onChange={(event) => setDraftTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelTitleEdit();
+                          }
+                        }}
+                        aria-label="Page title"
+                        disabled={savingTitle}
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        className="dashboard-title-action"
+                        aria-label="Save page title"
+                        title="Save title"
+                        disabled={savingTitle}
+                      >
+                        <FiCheck aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="dashboard-title-action"
+                        onClick={cancelTitleEdit}
+                        aria-label="Cancel title edit"
+                        title="Cancel"
+                        disabled={savingTitle}
+                      >
+                        <FiX aria-hidden="true" />
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <h2 className="dashboard-hero-title">{title}</h2>
+                      <button
+                        type="button"
+                        className="dashboard-icon-button dashboard-title-edit-button"
+                        onClick={startTitleEdit}
+                        aria-label={`Edit title for ${title}`}
+                        title="Edit title"
+                      >
+                        <FiEdit2 aria-hidden="true" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <p className="dashboard-hero-url" title={page.url} onClick={() => window.open(page.url, "_blank", "noopener,noreferrer")}>
                 <span>{page.url}</span>
               </p>
               <div className="dashboard-meta-row">

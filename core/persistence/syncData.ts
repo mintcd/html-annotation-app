@@ -120,6 +120,7 @@ export async function getOrCreateWebsite(
   const website: WebsiteRow = {
     id: siteIdForOrigin(origin),
     origin,
+    title: null,
     created_at: now,
     updated_at: now,
   };
@@ -139,6 +140,26 @@ export async function findWebsiteByOrigin(
     .all()
     .find((website) => website.origin === normalizedOrigin);
   return row ? normalizeWebsiteRow(row) : undefined;
+}
+
+export async function updateWebsiteRow(
+  id: string,
+  changes: Partial<Pick<Website, 'title' | 'updated_at'>>,
+  runtime?: AppSyncRuntime,
+): Promise<Website | undefined> {
+  const syncRuntime = activeRuntime(runtime);
+  const websites = syncRuntime.db.table('websites');
+  const existing = websites.get({ id });
+  if (!existing) return undefined;
+
+  const next: WebsiteRow = {
+    ...existing,
+    ...changes,
+    title: changes.title === undefined ? existing.title : changes.title || null,
+  };
+  await websites.put(next);
+  flushSync('updated website', syncRuntime);
+  return normalizeWebsiteRow(next);
 }
 
 export async function ensureWebsiteAvailableForRoute(
@@ -319,6 +340,7 @@ function normalizeWebsiteRow(row: WebsiteRow): Website {
   return {
     id: row.id,
     origin: row.origin,
+    title: row.title ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

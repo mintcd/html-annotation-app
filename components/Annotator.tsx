@@ -2,11 +2,11 @@
 
 import { useCallback } from 'react';
 import { useAnnotationSession } from '../core/annotation/session/useAnnotationSession';
-import { AnnotationContext } from '../contexts/Annotator.context';
+import { AnnotationContext } from './Annotator.context';
 import {
   AnnotatorOverlayProvider,
   useAnnotatorOverlay,
-} from '../contexts/AnnotatorOverlay.context';
+} from './AnnotatorOverlay.context';
 import {
   ContextualLayer,
   DialogLayer,

@@ -3,6 +3,7 @@ export const ANONYMOUS_USER_ID = "anonymous";
 
 export interface SyncSession {
   readonly userId: string;
+  readonly username?: string;
   readonly streamId: string;
   readonly authenticated: boolean;
 }
