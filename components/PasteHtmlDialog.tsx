@@ -11,11 +11,13 @@ type Props = {
   siteId: string;
   /** path without leading slash, e.g. "article/10.1007/s11098-025-02457-y" */
   path: string;
+  /** search string with leading "?", scoped to the source page, not the iframe cache */
+  search: string;
   onSuccess: () => void;
   onClose: () => void;
 };
 
-export default function PasteHtmlDialog({ error, siteId, path, onSuccess, onClose }: Props) {
+export default function PasteHtmlDialog({ error, siteId, path, search, onSuccess, onClose }: Props) {
   const [html, setHtml] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -29,7 +31,7 @@ export default function PasteHtmlDialog({ error, siteId, path, onSuccess, onClos
       const res = await fetch('/api/webpages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site: siteId, path, html: trimmed }),
+        body: JSON.stringify({ site: siteId, path, search, html: trimmed }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null) as { error?: string } | null;

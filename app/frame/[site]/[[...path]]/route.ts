@@ -9,8 +9,14 @@
 // iframe.contentDocument access for highlight injection and range matching.
 
 import * as cheerio from 'cheerio';
+import {
+  OutboundFetchError,
+  fetchOutboundUrl,
+  readResponseText,
+} from '@/core/net/outboundFetch';
 import { getEnv } from '@/core/utils/env';
-import { webpageStorageKey } from '@/core/frame/pastedHtml';
+import { stripFrameCacheScopeFromSearch } from '@/core/frame/cacheScope';
+import { scopedWebpageStorageKey } from '@/core/frame/pastedHtml';
 import {
   isSameOriginUrl,
   resolveUrl,
@@ -34,6 +40,9 @@ const BLOCKED_SCRIPT_HOSTS = [
   'cdn.cookielaw.org', 'cdn.onetrust.com', 'onetrust.com',
   'cookiebot.com', 'usercentrics.eu', 'trustarc.com',
 ];
+const FRAME_FETCH_TIMEOUT_MS = 10_000;
+const FRAME_MAX_REDIRECTS = 5;
+const FRAME_MAX_HTML_BYTES = 5 * 1024 * 1024;
 
 function isBlocked(src: string): boolean {
   try {
@@ -50,25 +59,6 @@ function isJsonOnly(text: string): boolean {
     try { JSON.parse(trimmed); return true; } catch { return false; }
   }
   return false;
-}
-
-async function fetchWithCookies(
-  url: string,
-  headers: Record<string, string>,
-  maxRedirects = 10,
-): Promise<Response> {
-  let currentUrl = url;
-  for (let i = 0; i < maxRedirects; i++) {
-    const res = await fetch(currentUrl, { headers, redirect: 'manual' });
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location');
-      if (!location) return res;
-      currentUrl = new URL(location, currentUrl).href;
-    } else {
-      return res;
-    }
-  }
-  return fetch(currentUrl, { headers, redirect: 'manual' });
 }
 
 /**
@@ -144,9 +134,11 @@ export async function GET(
 ) {
   const { site, path } = params;
   const reqUrl = new URL(request.url);
+  const session = syncSessionFromRequest(request);
+  const upstreamSearch = stripFrameCacheScopeFromSearch(reqUrl.search);
 
   const env = getEnv();
-  const state = await readSyncStreamState(syncSessionFromRequest(request));
+  const state = await readSyncStreamState(session);
   const cookieRow = findSyncStateRow<{ cookie: string }>(
     state,
     'site_cookies',
@@ -170,7 +162,7 @@ export async function GET(
     siteOrigin = row.origin;
 
     // ── Check R2 bucket for user-pasted HTML ───────────────────────────
-    const r2Key = webpageStorageKey(site, path);
+    const r2Key = scopedWebpageStorageKey(session.userId, site, path, upstreamSearch);
     const stored = await env.WEBPAGES_BUCKET.get(r2Key);
     if (stored) storedHtml = await stored.text();
   } catch {
@@ -179,7 +171,7 @@ export async function GET(
 
   // ── 2. Fetch upstream HTML ─────────────────────────────────────────────
   const pathname = path?.length ? '/' + path.join('/') : '/';
-  const targetUrl = `${siteOrigin}${pathname}${reqUrl.search}`;
+  const targetUrl = `${siteOrigin}${pathname}${upstreamSearch}`;
 
   let html: string;
   let finalUrl: string;
@@ -207,7 +199,14 @@ export async function GET(
       reqHeaders['referer'] = siteOrigin + '/';
       if (siteCookie?.trim()) reqHeaders['cookie'] = siteCookie;
 
-      const upstream = await fetchWithCookies(targetUrl, reqHeaders);
+      const { response: upstream, finalUrl: upstreamUrl } = await fetchOutboundUrl(targetUrl, {
+        headers: reqHeaders,
+        maxBytes: FRAME_MAX_HTML_BYTES,
+        maxRedirects: FRAME_MAX_REDIRECTS,
+        timeoutMs: FRAME_FETCH_TIMEOUT_MS,
+        allowedContentTypes: ['text/html', 'application/xhtml+xml'],
+        allowMissingContentType: true,
+      });
 
       if (!upstream.ok) {
         return frameErrorResponse(
@@ -215,10 +214,13 @@ export async function GET(
         );
       }
 
-      html = await upstream.text();
-      finalUrl = upstream.url;
+      html = await readResponseText(upstream, FRAME_MAX_HTML_BYTES);
+      finalUrl = upstreamUrl.href;
     } catch (e) {
-      return frameErrorResponse(`Fetch error: ${e}`);
+      const message = e instanceof OutboundFetchError || e instanceof Error
+        ? e.message
+        : String(e);
+      return frameErrorResponse(`Fetch error: ${message}`);
 
     }
   }

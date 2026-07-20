@@ -30,6 +30,7 @@ export type AnnotatorProps = {
   iframeUrl: string;
   frameSiteId: string;
   frameStoragePath: string;
+  frameStorageSearch: string;
   initialAnnotations?: Annotation[];
   initialTitle?: string;
 };
@@ -49,6 +50,7 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
     iframeUrl,
     frameSiteId,
     frameStoragePath,
+    frameStorageSearch,
     initialAnnotations,
     initialTitle,
   } = props;
@@ -169,6 +171,7 @@ function AnnotatorWorkspace(props: AnnotatorProps) {
                   error={overlay.dialog.type === 'pasteHtml' ? overlay.dialog.error : error}
                   siteId={frameSiteId}
                   path={frameStoragePath}
+                  search={frameStorageSearch}
                   onSuccess={() => {
                     overlay.closeDialog();
                     void reloadFrame();

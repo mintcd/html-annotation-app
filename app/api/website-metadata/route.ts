@@ -1,11 +1,18 @@
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
+import {
+  OutboundFetchError,
+  fetchOutboundUrl,
+  readResponseText,
+  validateOutboundUrl,
+} from "@/core/net/outboundFetch";
 import { syncSessionFromRequest } from "@/core/persistence/syncIdentity";
 
 export const runtime = "edge";
 
-const MAX_HTML_CHARS = 500_000;
+const MAX_HTML_BYTES = 1_000_000;
 const FETCH_TIMEOUT_MS = 7000;
+const MAX_REDIRECTS = 5;
 const METADATA_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -37,9 +44,7 @@ export async function GET(request: Request): Promise<Response> {
   let targetUrl: URL | undefined;
   try {
     targetUrl = readTargetUrl(request);
-    const htmlResponse = await fetchHtml(targetUrl);
-    const html = (await htmlResponse.text()).slice(0, MAX_HTML_CHARS);
-    const pageUrl = new URL(htmlResponse.url || targetUrl.href);
+    const { html, pageUrl } = await fetchHtml(targetUrl);
     const metadata = extractMetadata(html, pageUrl);
 
     return metadataResponse(metadata);
@@ -80,23 +85,19 @@ function readTargetUrl(request: Request): URL {
     }
   }
 
-  if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
-    throw new WebsiteMetadataError("Unsupported url protocol.", 400);
+  try {
+    return validateOutboundUrl(targetUrl);
+  } catch (error) {
+    if (error instanceof OutboundFetchError) {
+      throw new WebsiteMetadataError(error.message, error.status);
+    }
+    throw error;
   }
-
-  if (isBlockedHost(targetUrl.hostname)) {
-    throw new WebsiteMetadataError("Unsupported url host.", 400);
-  }
-
-  return targetUrl;
 }
 
-async function fetchHtml(targetUrl: URL): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
+async function fetchHtml(targetUrl: URL): Promise<{ html: string; pageUrl: URL }> {
   try {
-    const response = await fetch(targetUrl.href, {
+    const { response, finalUrl } = await fetchOutboundUrl(targetUrl, {
       headers: {
         accept: "text/html,application/xhtml+xml",
         "accept-language": "en-US,en;q=0.9",
@@ -106,25 +107,26 @@ async function fetchHtml(targetUrl: URL): Promise<Response> {
         "upgrade-insecure-requests": "1",
         "user-agent": METADATA_USER_AGENT,
       },
-      signal: controller.signal,
+      maxBytes: MAX_HTML_BYTES,
+      maxRedirects: MAX_REDIRECTS,
+      timeoutMs: FETCH_TIMEOUT_MS,
+      allowedContentTypes: ["text/html", "application/xhtml+xml"],
+      allowMissingContentType: true,
     });
 
     if (!response.ok) {
       throw new WebsiteMetadataError("Website metadata fetch failed.", 502);
     }
 
-    const contentType = response.headers.get("content-type") ?? "";
-    if (
-      contentType
-      && !contentType.toLowerCase().includes("text/html")
-      && !contentType.toLowerCase().includes("application/xhtml+xml")
-    ) {
-      throw new WebsiteMetadataError("Website metadata response is not HTML.", 415);
+    return {
+      html: await readResponseText(response, MAX_HTML_BYTES),
+      pageUrl: finalUrl,
+    };
+  } catch (error) {
+    if (error instanceof OutboundFetchError) {
+      throw new WebsiteMetadataError(error.message, error.status);
     }
-
-    return response;
-  } finally {
-    clearTimeout(timeout);
+    throw error;
   }
 }
 
@@ -417,30 +419,6 @@ function sizeScore(rawSizes: string | undefined): number {
 
 function fallbackIconUrl(pageUrl: URL): string {
   return new URL("/favicon.ico", pageUrl).href;
-}
-
-function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (
-    host === "localhost"
-    || host.endsWith(".localhost")
-    || host === "0.0.0.0"
-    || host === "::1"
-  ) {
-    return true;
-  }
-
-  const parts = host.split(".").map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
-    return false;
-  }
-
-  const [first, second] = parts;
-  return first === 10
-    || first === 127
-    || (first === 169 && second === 254)
-    || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168);
 }
 
 function metadataResponse(metadata: WebsiteMetadata, status = 200): Response {

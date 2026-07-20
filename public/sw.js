@@ -10,7 +10,7 @@ importScripts('/sw.sync.js');
 (() => {
   'use strict';
 
-  const FRAME_CACHE_VERSION = 'v1';
+  const FRAME_CACHE_VERSION = 'v2';
   const FRAME_CACHE_PREFIX = `annotation-frame-${FRAME_CACHE_VERSION}-`;
   const FRAME_CACHE_FAMILY = 'annotation-frame-v';
   const LOGO_CACHE_VERSION = 'v1';

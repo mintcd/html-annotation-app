@@ -1,4 +1,4 @@
-const FRAME_CACHE_VERSION = 'v1';
+const FRAME_CACHE_VERSION = 'v2';
 const FRAME_CACHE_PREFIX = `annotation-frame-${FRAME_CACHE_VERSION}-`;
 const FRAME_WORKER_PATH = '/sw.js';
 const FRAME_WORKER_SCOPE = '/';

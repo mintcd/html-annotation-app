@@ -1,5 +1,9 @@
 import SitePageClient from "@/components/SitePageClient";
 import { headers } from "next/headers";
+import {
+  stripFrameCacheScopeFromSearch,
+  withFrameCacheScope,
+} from "@/core/frame/cacheScope";
 import { syncSessionFromHeaderValues } from "@/core/persistence/syncIdentity";
 import {
   findSyncStateRow,
@@ -82,6 +86,7 @@ async function resolveAnnotatorRoute({
       proxiedUrl: string;
       frameSiteId: string;
       frameStoragePath: string;
+      frameStorageSearch: string;
     }
   | { ok: false; message: string }
 > {
@@ -105,17 +110,23 @@ async function resolveAnnotatorRoute({
   if (!origin) return { ok: false, message: "The stored site origin is invalid." };
 
   try {
-    const targetUrl = new URL(`${pathResult.pathname}${search}`, origin);
+    const cleanSearch = stripFrameCacheScopeFromSearch(search);
+    const targetUrl = new URL(`${pathResult.pathname}${cleanSearch}`, origin);
     const pageUrl = new URL(normalizeUrl(targetUrl.href));
     const framePath = pageUrl.pathname === "/" ? "" : pageUrl.pathname;
     const frameStoragePath = path?.length ? path.join("/") : "";
+    const proxiedUrl = withFrameCacheScope(
+      `/frame/${encodeURIComponent(siteId)}${framePath}${pageUrl.search}`,
+      session.userId,
+    );
 
     return {
       ok: true,
       pageUrl: pageUrl.href,
-      proxiedUrl: `/frame/${encodeURIComponent(siteId)}${framePath}${pageUrl.search}`,
+      proxiedUrl,
       frameSiteId: siteId,
       frameStoragePath,
+      frameStorageSearch: pageUrl.search,
     };
   } catch {
     return { ok: false, message: "The requested page URL is invalid." };
@@ -149,6 +160,7 @@ export default async function SitePage({
       proxiedUrl={resolvedRoute.proxiedUrl}
       frameSiteId={resolvedRoute.frameSiteId}
       frameStoragePath={resolvedRoute.frameStoragePath}
+      frameStorageSearch={resolvedRoute.frameStorageSearch}
     />
   );
 }

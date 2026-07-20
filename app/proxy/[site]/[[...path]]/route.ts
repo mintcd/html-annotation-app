@@ -8,12 +8,21 @@
 // relative imports/url() values inside CSS and scripts keep resolving through
 // this same asset proxy path.
 
+import {
+  OutboundFetchError,
+  fetchOutboundUrl,
+  readResponseArrayBuffer,
+  readResponseText,
+} from "@/core/net/outboundFetch";
 import { syncSessionFromRequest } from "@/core/persistence/syncIdentity";
 import {
   findSyncStateRow,
   readSyncStreamState,
 } from "@/core/persistence/syncServerState";
 
+const PROXY_FETCH_TIMEOUT_MS = 10_000;
+const PROXY_MAX_REDIRECTS = 5;
+const PROXY_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
 
 export async function GET(
@@ -52,7 +61,22 @@ export async function GET(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   };
 
-  const upstream = await fetch(targetUrl, { method: "GET", headers: reqHeaders, })
+  let upstream: Response;
+  try {
+    const result = await fetchOutboundUrl(targetUrl, {
+      method: "GET",
+      headers: reqHeaders,
+      maxBytes: PROXY_MAX_RESPONSE_BYTES,
+      maxRedirects: PROXY_MAX_REDIRECTS,
+      timeoutMs: PROXY_FETCH_TIMEOUT_MS,
+    });
+    upstream = result.response;
+  } catch (error) {
+    return new Response(
+      error instanceof Error ? error.message : "Upstream fetch failed",
+      { status: error instanceof OutboundFetchError ? error.status : 502 },
+    );
+  }
 
   if (!upstream.ok) {
     return new Response(
@@ -80,7 +104,16 @@ export async function GET(
 
   // ── 4. Text assets: targeted rewriting ──────────────────────────────────
   if (isScript || isScriptFile || isCss) {
-    const text = await upstream.text();
+    let text: string;
+    try {
+      text = await readResponseText(upstream, PROXY_MAX_RESPONSE_BYTES);
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : "Upstream response failed",
+        { status: error instanceof OutboundFetchError ? error.status : 502 },
+      );
+    }
+
     if (isScript || isScriptFile) {
 
       const contentType =
@@ -98,6 +131,7 @@ export async function GET(
           'Cache-Control':
             upstream.headers.get('Cache-Control') ?? 'public, max-age=3600',
           'Access-Control-Allow-Origin': corsOrigin,
+          'X-Content-Type-Options': 'nosniff',
         },
       });
     }
@@ -110,20 +144,33 @@ export async function GET(
         'Cache-Control':
           upstream.headers.get('Cache-Control') ?? 'public, max-age=3600',
         'Access-Control-Allow-Origin': corsOrigin,
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   }
 
   // ── 5. Binary / other assets - stream through unchanged ─────────────────
+  let body: ArrayBuffer;
+  try {
+    body = await readResponseArrayBuffer(upstream, PROXY_MAX_RESPONSE_BYTES);
+  } catch (error) {
+    return new Response(
+      error instanceof Error ? error.message : "Upstream response failed",
+      { status: error instanceof OutboundFetchError ? error.status : 502 },
+    );
+  }
+
   const headers = new Headers();
   if (ct) headers.set("Content-Type", ct);
+  headers.set("Content-Length", String(body.byteLength));
   headers.set(
     "Cache-Control",
     upstream.headers.get("Cache-Control") ?? "public, max-age=31536000, immutable"
   );
   headers.set("Access-Control-Allow-Origin", corsOrigin);
+  headers.set("X-Content-Type-Options", "nosniff");
 
-  return new Response(upstream.body, {
+  return new Response(body, {
     status: upstream.status,
     statusText: upstream.statusText,
     headers,

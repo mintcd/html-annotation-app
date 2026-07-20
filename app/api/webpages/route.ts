@@ -1,4 +1,4 @@
-import { webpageStorageKey, WebpageStorageKeyError } from "@/core/frame/pastedHtml";
+import { scopedWebpageStorageKey, WebpageStorageKeyError } from "@/core/frame/pastedHtml";
 import { syncSessionFromRequest } from "@/core/persistence/syncIdentity";
 import {
   findSyncStateRow,
@@ -11,6 +11,7 @@ export const runtime = "edge";
 type PastedHtmlRequest = {
   readonly site: string;
   readonly path?: string;
+  readonly search?: string;
   readonly html: string;
 };
 
@@ -26,9 +27,14 @@ class PastedHtmlRequestError extends Error {
 export async function POST(request: Request): Promise<Response> {
   try {
     const input = await readPastedHtmlRequest(request);
-    const key = webpageStorageKey(input.site, input.path);
+    const session = syncSessionFromRequest(request);
+    if (!session.authenticated) {
+      throw new PastedHtmlRequestError("Sign in before saving pasted HTML.", 401);
+    }
+
+    const key = scopedWebpageStorageKey(session.userId, input.site, input.path, input.search);
     const env = getEnv();
-    const state = await readSyncStreamState(syncSessionFromRequest(request));
+    const state = await readSyncStreamState(session);
     const website = findSyncStateRow(state, "websites", "id", input.site);
 
     if (!website) {
@@ -69,6 +75,10 @@ async function readPastedHtmlRequest(request: Request): Promise<PastedHtmlReques
     throw new PastedHtmlRequestError("Invalid page path.");
   }
 
+  if (record.search !== undefined && typeof record.search !== "string") {
+    throw new PastedHtmlRequestError("Invalid page search.");
+  }
+
   if (typeof record.html !== "string" || record.html.trim() === "") {
     throw new PastedHtmlRequestError("Paste HTML before saving.");
   }
@@ -76,6 +86,7 @@ async function readPastedHtmlRequest(request: Request): Promise<PastedHtmlReques
   return {
     site: record.site,
     path: record.path,
+    search: record.search,
     html: record.html.trim(),
   };
 }

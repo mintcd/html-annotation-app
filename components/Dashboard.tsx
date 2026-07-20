@@ -41,6 +41,7 @@ import {
   upsertHighlightColorRow,
 } from '../core/persistence';
 import { deleteFrameBundle, ensureFrameCacheReady } from '../core/frame/cache';
+import { withFrameCacheScope } from '../core/frame/cacheScope';
 
 type SiteMetadata = {
   title?: string;
@@ -440,7 +441,12 @@ function AuthenticatedDashboard() {
         const website = await findWebsiteByOrigin(sourceUrl.origin, runtime);
         if (website) {
           const pathname = sourceUrl.pathname === '/' ? '' : sourceUrl.pathname;
-          await deleteFrameBundle(`/frame/${website.id}${pathname}${sourceUrl.search}`);
+          await deleteFrameBundle(
+            withFrameCacheScope(
+              `/frame/${website.id}${pathname}${sourceUrl.search}`,
+              sync.session.userId,
+            ),
+          );
         }
       } catch (cacheError) {
         // The synced page deletion is authoritative. A cache cleanup failure

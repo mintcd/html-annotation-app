@@ -15,6 +15,7 @@ type SitePageClientProps = {
   proxiedUrl: string;
   frameSiteId: string;
   frameStoragePath: string;
+  frameStorageSearch: string;
 };
 
 export default function SitePageClient({
@@ -22,6 +23,7 @@ export default function SitePageClient({
   proxiedUrl,
   frameSiteId,
   frameStoragePath,
+  frameStorageSearch,
 }: SitePageClientProps) {
   const sync = useSyncStatus();
   const runtime = useSyncRuntime();
@@ -70,6 +72,7 @@ export default function SitePageClient({
       iframeUrl={proxiedUrl}
       frameSiteId={frameSiteId}
       frameStoragePath={frameStoragePath}
+      frameStorageSearch={frameStorageSearch}
       initialTitle={String(pageRow.title ?? '')}
     />
   );
