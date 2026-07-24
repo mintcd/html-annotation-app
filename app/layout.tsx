@@ -3,10 +3,13 @@ import '../components/design-system/styles/tokens.css';
 import '../components/styles/global.css';
 
 import { SyncEngineProvider } from '../core/persistence';
+import { Metadata } from 'next';
 
-export const metadata = {
-  title: 'Annotation',
-  description: 'Annotation for HTML documents',
+export const metadata: Metadata = {
+  title: 'HTML Annotation App',
+  description: 'Offline-capable HTML annotation tool',
+  manifest: '/manifest.json',
+  themeColor: '#000000',
 };
 
 export const runtime = 'edge';

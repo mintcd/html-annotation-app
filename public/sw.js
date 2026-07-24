@@ -6,6 +6,47 @@
  * overwriting it.
  */
 importScripts('/sw.sync.js');
+importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.3.0/workbox-sw.js');
+
+const { precacheAndRoute } = workbox.precaching;
+precacheAndRoute(self.__WB_MANIFEST);
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // 1. Your existing logic for proxy and frame snapshots
+  if (url.pathname.startsWith('/proxy/') || url.pathname.startsWith('/frame/')) {
+    event.respondWith(
+      fetch(event.request).catch(async () => {
+        const cache = await caches.open('html-snapshots-v1');
+        const cachedResponse = await cache.match(event.request);
+        if (cachedResponse) return cachedResponse;
+        return new Response('Offline: Snapshot not found.', { status: 503 });
+      })
+    );
+    return; // Exit early so it doesn't fall through
+  }
+
+  // 2. NEW: Handle standard HTML page navigations
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(async () => {
+        // Attempt to serve the precached root document.
+        // If you are using a standard Vite React SPA, change '/' to '/index.html'
+        const cachedRoot = await caches.match('/');
+        if (cachedRoot) {
+          return cachedRoot;
+        }
+
+        // Failsafe HTML if the cache is empty or the path is incorrect
+        return new Response(
+          '<html><head><title>Offline</title></head><body><h1>Offline Mode</h1><p>You are disconnected, and the app shell is not cached.</p></body></html>',
+          { headers: { 'Content-Type': 'text/html' } }
+        );
+      })
+    );
+  }
+});
 
 (() => {
   'use strict';
