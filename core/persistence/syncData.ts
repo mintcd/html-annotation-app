@@ -1,9 +1,11 @@
-import type { Row } from '@/app/sync/sync.generated';
+import type { Row } from '@/sync/types';
+import type { Engine } from '@/sync/client';
 import {
   getCurrentSyncRuntime,
   type AppSyncRuntime,
 } from './syncRuntime';
 import { normalizeUrl } from '../utils/url';
+import { collectSyncRows } from './syncQueries';
 
 const REMOTE_WEBSITE_TIMEOUT_MS = 5000;
 const REMOTE_WEBSITE_POLL_MS = 150;
@@ -75,8 +77,8 @@ export async function ensurePage(
 ): Promise<Page> {
   const url = normalizeUrl(rawUrl);
   const syncRuntime = activeRuntime(runtime);
-  const pages = syncRuntime.db.table('pages');
-  const existing = pages.all().find((page) => page.url === url);
+  const pages = activeDatabase(syncRuntime).from('pages');
+  const existing = (await pages.where('url', 'eq', url).limit(1).execute()).rows[0];
   if (existing) return normalizePageRow(existing);
 
   const now = syncTimestamp();
@@ -90,7 +92,7 @@ export async function ensurePage(
     updated_at: now,
   };
 
-  await pages.put(page);
+  await pages.insert(page);
   flushSync('inserted page', syncRuntime);
   return normalizePageRow(page);
 }
@@ -99,7 +101,7 @@ export async function findPageById(
   id: string,
   runtime?: AppSyncRuntime,
 ): Promise<Page | undefined> {
-  const row = activeRuntime(runtime).db.table('pages').get({ id });
+  const { row } = await activeDatabase(activeRuntime(runtime)).from('pages').get([id]);
   return row ? normalizePageRow(row) : undefined;
 }
 
@@ -109,15 +111,15 @@ export async function updatePageRow(
   runtime?: AppSyncRuntime,
 ): Promise<Page | undefined> {
   const syncRuntime = activeRuntime(runtime);
-  const pages = syncRuntime.db.table('pages');
-  const existing = pages.get({ id });
+  const pages = activeDatabase(syncRuntime).from('pages');
+  const { row: existing } = await pages.get([id]);
   if (!existing) return undefined;
 
   const next: PageRow = {
     ...existing,
     ...changes,
   };
-  await pages.put(next);
+  await pages.update([id], changes);
   flushSync('updated page', syncRuntime);
   return normalizePageRow(next);
 }
@@ -127,7 +129,7 @@ export async function deletePageRow(
   runtime?: AppSyncRuntime,
 ): Promise<void> {
   const syncRuntime = activeRuntime(runtime);
-  await syncRuntime.db.table('pages').delete({ id });
+  await activeDatabase(syncRuntime).from('pages').delete([id]);
   flushSync('deleted page', syncRuntime);
 }
 
@@ -137,8 +139,8 @@ export async function getOrCreateWebsite(
 ): Promise<Website> {
   const origin = new URL(rawOrigin).origin;
   const syncRuntime = activeRuntime(runtime);
-  const websites = syncRuntime.db.table('websites');
-  const existing = websites.all().find((website) => website.origin === origin);
+  const websites = activeDatabase(syncRuntime).from('websites');
+  const existing = (await websites.where('origin', 'eq', origin).limit(1).execute()).rows[0];
   if (existing) return normalizeWebsiteRow(existing);
 
   const now = syncTimestamp();
@@ -149,7 +151,7 @@ export async function getOrCreateWebsite(
     created_at: now,
     updated_at: now,
   };
-  await websites.put(website);
+  await websites.insert(website);
   flushSync('inserted website', syncRuntime);
   return normalizeWebsiteRow(website);
 }
@@ -159,11 +161,12 @@ export async function findWebsiteByOrigin(
   runtime?: AppSyncRuntime,
 ): Promise<Website | undefined> {
   const normalizedOrigin = new URL(origin).origin;
-  const row = activeRuntime(runtime)
-    .db
-    .table('websites')
-    .all()
-    .find((website) => website.origin === normalizedOrigin);
+  const { rows } = await activeDatabase(activeRuntime(runtime))
+    .from('websites')
+    .where('origin', 'eq', normalizedOrigin)
+    .limit(1)
+    .execute();
+  const row = rows[0];
   return row ? normalizeWebsiteRow(row) : undefined;
 }
 
@@ -173,16 +176,16 @@ export async function updateWebsiteRow(
   runtime?: AppSyncRuntime,
 ): Promise<Website | undefined> {
   const syncRuntime = activeRuntime(runtime);
-  const websites = syncRuntime.db.table('websites');
-  const existing = websites.get({ id });
+  const websites = activeDatabase(syncRuntime).from('websites');
+  const { row: existing } = await websites.get([id]);
   if (!existing) return undefined;
 
-  const next: WebsiteRow = {
-    ...existing,
+  const patch = {
     ...changes,
-    title: changes.title === undefined ? existing.title : changes.title || null,
+    ...(changes.title === undefined ? {} : { title: changes.title || null }),
   };
-  await websites.put(next);
+  const next: WebsiteRow = { ...existing, ...patch };
+  await websites.update([id], patch);
   flushSync('updated website', syncRuntime);
   return normalizeWebsiteRow(next);
 }
@@ -216,10 +219,10 @@ export async function createAnnotationRow(
   runtime?: AppSyncRuntime,
 ): Promise<Annotation> {
   const syncRuntime = activeRuntime(runtime);
-  const annotations = syncRuntime.db.table('annotations');
+  const annotations = activeDatabase(syncRuntime).from('annotations');
   const row = buildAnnotationRow(input);
 
-  await annotations.put(row);
+  await annotations.insert(row);
   flushSync('inserted annotation', syncRuntime);
   return normalizeAnnotationRow(row);
 }
@@ -231,8 +234,8 @@ export async function updateAnnotationRow(
   options: SyncWriteOptions = {},
 ): Promise<Annotation | undefined> {
   const syncRuntime = activeRuntime(runtime);
-  const annotations = syncRuntime.db.table('annotations');
-  const existing = annotations.get({ id });
+  const annotations = activeDatabase(syncRuntime).from('annotations');
+  const { row: existing } = await annotations.get([id]);
   if (!existing) return undefined;
 
   const anchor = annotationAnchorFields(
@@ -244,20 +247,20 @@ export async function updateAnnotationRow(
     changes.text,
     changes.position,
   );
-  const next: AnnotationRow = {
-    ...existing,
-    ...anchor,
+  const patch = {
+    ...(changes.position ? anchor : changes.text === undefined ? {} : { exact: changes.text }),
     ...(changes.html === undefined ? {} : { html: changes.html || null }),
     ...(changes.color === undefined ? {} : { color: changes.color }),
     ...(changes.comment === undefined ? {} : { comment: changes.comment || null }),
     ...(changes.updated_at === undefined ? {} : { updated_at: changes.updated_at }),
   };
+  const next: AnnotationRow = { ...existing, ...patch };
 
   if (annotationRowsEqual(existing, next)) {
     return normalizeAnnotationRow(existing);
   }
 
-  await annotations.put(next);
+  await annotations.update([id], patch);
   await flushSync('updated annotation', syncRuntime, options.flush ?? 'background');
   return normalizeAnnotationRow(next);
 }
@@ -267,7 +270,7 @@ export async function deleteAnnotationRow(
   runtime?: AppSyncRuntime,
 ): Promise<void> {
   const syncRuntime = activeRuntime(runtime);
-  await syncRuntime.db.table('annotations').delete({ id });
+  await activeDatabase(syncRuntime).from('annotations').delete([id]);
   flushSync('deleted annotation', syncRuntime);
 }
 
@@ -285,7 +288,10 @@ export async function upsertHighlightColorRow(
   const syncRuntime = activeRuntime(runtime);
   const row: HighlightColorRow = { color, semantics };
 
-  await syncRuntime.db.table('highlight_colors').put(row);
+  const colors = activeDatabase(syncRuntime).from('highlight_colors');
+  const { row: existing } = await colors.get([color]);
+  if (existing) await colors.update([color], { semantics });
+  else await colors.insert(row);
   await flushSync('updated highlight color', syncRuntime, options.flush ?? 'background');
   return normalizeHighlightColorRow(row);
 }
@@ -299,7 +305,7 @@ export async function deleteHighlightColorRow(
   if (!normalized) return;
 
   const syncRuntime = activeRuntime(runtime);
-  await syncRuntime.db.table('highlight_colors').delete({ color: normalized });
+  await activeDatabase(syncRuntime).from('highlight_colors').delete([normalized]);
   await flushSync('deleted highlight color', syncRuntime, options.flush ?? 'background');
 }
 
@@ -309,10 +315,10 @@ export async function upsertPageNoteRow(
   options: SyncWriteOptions = {},
 ): Promise<PageNote> {
   const syncRuntime = activeRuntime(runtime);
-  const pageNotes = syncRuntime.db.table('page_notes');
+  const pageNotes = activeDatabase(syncRuntime).from('page_notes');
   const existing = input.id
-    ? pageNotes.get({ id: input.id })
-    : newestPageNoteRow(pageNotes.all().filter((note) => note.page_id === input.page_id));
+    ? (await pageNotes.get([input.id])).row
+    : newestPageNoteRow(await collectSyncRows(pageNotes.where('page_id', 'eq', input.page_id)));
   const format = input.format ?? existing?.format ?? PAGE_NOTE_FORMAT;
 
   if (
@@ -342,7 +348,16 @@ export async function upsertPageNoteRow(
         updated_at: now,
       };
 
-  await pageNotes.put(row);
+  if (existing) {
+    await pageNotes.update([existing.id], {
+      page_id: input.page_id,
+      content: input.content,
+      format,
+      updated_at: now,
+    });
+  } else {
+    await pageNotes.insert(row);
+  }
   await flushSync(existing ? 'updated page note' : 'inserted page note', syncRuntime, options.flush ?? 'background');
   return normalizePageNoteRow(row);
 }
@@ -353,7 +368,7 @@ export async function deletePageNoteRow(
   options: SyncWriteOptions = {},
 ): Promise<void> {
   const syncRuntime = activeRuntime(runtime);
-  await syncRuntime.db.table('page_notes').delete({ id });
+  await activeDatabase(syncRuntime).from('page_notes').delete([id]);
   await flushSync('deleted page note', syncRuntime, options.flush ?? 'background');
 }
 
@@ -552,6 +567,12 @@ async function remoteWebsiteExists(website: Pick<Website, 'id' | 'origin'>): Pro
 
 function activeRuntime(runtime: AppSyncRuntime | undefined): AppSyncRuntime {
   return runtime ?? getCurrentSyncRuntime();
+}
+
+function activeDatabase(runtime: AppSyncRuntime): Engine {
+  runtime.assertActive();
+  if (!runtime.ready || !runtime.db) throw new Error('Sync client is not ready');
+  return runtime.db;
 }
 
 function flushSync(

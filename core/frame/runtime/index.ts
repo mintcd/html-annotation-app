@@ -3,6 +3,7 @@ import {
   FRAME_SOURCE_BASE_META_NAME,
   resolveExternalLinkHref,
 } from '../externalLinks';
+export { sameDocumentFragment, scrollToFrameFragment } from '../fragments';
 export { applyFrameDarkMode } from '../darkMode';
 
 const COOKIE_BANNER_SELECTORS = [

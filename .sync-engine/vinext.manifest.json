@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "generator": "@mintcd/sync-engine/vinext",
+  "files": [
+    {
+      "path": "app/api/sync/route.ts",
+      "sha256": "563adc49d010d2edd4186c3ff0d1ee0127f9f35b15c4f16b6954eaacb30763de"
+    },
+    {
+      "path": "sync/client.generated.ts",
+      "sha256": "b705fa887c32c0667deacf5b2341fc511168f766451184eab3b3a05d91162d2b"
+    },
+    {
+      "path": "sync/d1.generated.ts",
+      "sha256": "ceb5b860088cae16bb5e985ea7fa8c69b2cd3b2e00a7898737109130500c7b1a"
+    },
+    {
+      "path": "sync/endpoint.generated.ts",
+      "sha256": "f996bf2cb1262bb9d4725effd77bdb7e9949c139792a41f59df9aac89a723d5a"
+    },
+    {
+      "path": "sync/model.generated.ts",
+      "sha256": "079d214a9834d00b879a06a2c3820be2d8340333152e3990597851b9e2983b93"
+    },
+    {
+      "path": "sync/runtime.generated.ts",
+      "sha256": "c6289e85a4021f4a028757181a873a28e5b5ca37cbdfbd6976ac2dc963668ecc"
+    },
+    {
+      "path": "sync/server.generated.ts",
+      "sha256": "0d76d0f5f9f8301d45c51e61cb7a2554db344d662ca6a6a19d31bc4587d28dfc"
+    }
+  ]
+}

@@ -1,5 +1,9 @@
 # Routes And Runtime
 
+This is the route inventory for the [architecture](../architecture.md).
+Behavioral contracts are in [page loading](../requirements/page-loading.md)
+and [sync and auth](../requirements/sync-and-auth.md).
+
 ## Page Routes
 
 | Route | Runtime | File | Purpose |
@@ -17,8 +21,7 @@
 | `POST /api/auth/login` | edge | Verify credentials and set session cookie. |
 | `POST /api/auth/logout` | edge | Clear session cookie. |
 | `GET /api/auth/session` | edge | Return current sync session. |
-| `POST /api/sync/pull` | nodejs | Sync-engine pull endpoint. |
-| `POST /api/sync/push` | nodejs | Sync-engine push endpoint. |
+| `POST /api/sync` | Cloudflare workerd | Typed CRUD sync endpoint with cookie, Origin and stream checks. |
 | `GET /api/websites` | edge | Read website rows from current user's sync state. |
 | `POST /api/webpages` | edge | Save pasted HTML to R2. |
 | `GET /api/website-metadata` | edge | Fetch title and logo candidates for a site. |
@@ -52,19 +55,20 @@ Route handlers that need D1 or R2 call `getEnv()` from
 
 ## Service Workers
 
-There are two service-worker files:
+The application-owned [public/sw.js](../../public/sw.js) bundles the sync host
+against the shared generated model and runtime. VitePWA builds it into
+`dist/client/sw.js` for the client environment. The same worker provides:
 
-- [public/sw.js](../../public/sw.js): hand-maintained stable entry point
-- [public/sw.sync.js](../../public/sw.sync.js): generated sync-engine worker
-
-`sw.js` imports `sw.sync.js`, then adds:
-
+- versioned sync messages and Background Sync delivery with foreground fallback
 - app-shell precache
 - app navigation cache
 - static asset/image caching
-- offline-tolerant session endpoint caching
 - per-frame document and asset caches
 - website logo cache
+
+Auth/session responses bypass runtime caching. The client explicitly retains
+its last verified identity for offline replica recovery, and worker activation
+removes the retired session-response cache.
 
 ## Cloudflare Bindings
 
@@ -81,11 +85,14 @@ Bindings are configured in [wrangler.jsonc](../../wrangler.jsonc):
 
 Do not edit:
 
-- `app/sync/sync.generated.ts`
-- `public/sw.sync.js`
+- `sync/*.generated.ts`
+- `app/api/sync/route.ts`
 
 Regenerate them with:
 
 ```sh
 npm run sync
 ```
+
+The initial `migrations/0001_sync_html_annotation.sql` is application-owned and
+must be applied explicitly; generation and builds do not apply it.

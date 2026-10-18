@@ -26,12 +26,28 @@ http://localhost:5001
 npm run sync
 ```
 
-Runs sync-engine generation using [sync.next.config.ts](../../sync.next.config.ts).
+Runs `sync-engine-vinext generate` using
+[sync-engine.config.ts](../../sync-engine.config.ts).
 
 Outputs:
 
-- `app/sync/sync.generated.ts`
-- `public/sw.sync.js`
+- `sync/*.generated.ts`: model, client, runtime and D1/server composition
+- `app/api/sync/route.ts`: the single POST endpoint
+- `migrations/0001_sync_html_annotation.sql`: created once, then application-owned
+
+Generation reads local schema/Wrangler configuration and never applies SQL or
+discovers a remote schema. Apply migrations explicitly before serving the new
+integration. Existing installations should follow the
+[upgrade procedure](../operations/sync-upgrade.md).
+
+```sh
+npm run sync:check
+npm run cf:typegen
+```
+
+`sync:check` checks generated-source drift without writing. `cf:typegen` delegates
+to `wrangler types` to refresh binding declarations. Vinext tooling needs Node
+22.12 or newer on this project; Node 24 is recommended.
 
 ## Checks
 

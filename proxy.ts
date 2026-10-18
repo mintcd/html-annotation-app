@@ -16,7 +16,6 @@ export function proxy(req: NextRequest) {
 
   // Skip internal or static routes
   if (
-    pathname.startsWith('/_') ||
     isRoutePath(pathname, '/frame') ||
     isRoutePath(pathname, '/proxy') ||
     isRoutePath(pathname, '/api') ||
@@ -60,7 +59,7 @@ export function proxy(req: NextRequest) {
       const site = frameSiteFromPathname(r.pathname);
       if (site) {
         const accept = (req.headers.get('accept') || '').toLowerCase();
-        // Skip HTML navigations — only rewrite resource requests
+        // Skip HTML navigations - only rewrite resource requests
         if (!accept.includes('text/html')) {
           const dest = toProxyAssetPathFromFrameRequest(site, pathname, url.search);
           return NextResponse.rewrite(new URL(dest, req.url));

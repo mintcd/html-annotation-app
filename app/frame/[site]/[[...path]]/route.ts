@@ -16,9 +16,9 @@ import {
 } from '@/core/net/outboundFetch';
 import { getEnv } from '@/core/utils/env';
 import { stripFrameCacheScopeFromSearch } from '@/core/frame/cacheScope';
-import { FRAME_SOURCE_BASE_META_NAME } from '@/core/frame/externalLinks';
 import { injectFrameDarkModeStyles } from '@/core/frame/darkModeProxy';
 import { scopedWebpageStorageKey } from '@/core/frame/pastedHtml';
+import { installFrameSourceBase, storedHtmlSourceBase } from '@/core/frame/sourceBase';
 import {
   isSameOriginUrl,
   resolveUrl,
@@ -130,50 +130,6 @@ function disableStoredHtmlExecution($: cheerio.CheerioAPI): void {
   });
 }
 
-function validSourceBase(value: string | undefined, fallback: string): string | null {
-  if (!value?.trim()) return null;
-
-  try {
-    const url = new URL(value, fallback);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    url.hash = '';
-    return url.href;
-  } catch {
-    return null;
-  }
-}
-
-function storedHtmlSourceBase($: cheerio.CheerioAPI, fallback: string): string {
-  const authoredBase = validSourceBase($('base[href]').first().attr('href'), fallback);
-  if (authoredBase) return authoredBase;
-
-  const fallbackUrl = new URL(fallback);
-  const directoryCandidates = [
-    $('link[rel~="canonical"][href]').first().attr('href'),
-    $('meta[property="og:url"][content]').first().attr('content'),
-  ];
-
-  for (const candidate of directoryCandidates) {
-    const resolved = validSourceBase(candidate, fallback);
-    if (!resolved) continue;
-
-    const resolvedUrl = new URL(resolved);
-    const sameDocumentPath = resolvedUrl.origin === fallbackUrl.origin
-      && resolvedUrl.pathname.replace(/\/$/, '') === fallbackUrl.pathname.replace(/\/$/, '');
-    if (sameDocumentPath && resolvedUrl.pathname.endsWith('/')) return resolved;
-  }
-
-  return fallback;
-}
-
-function injectFrameSourceBase($: cheerio.CheerioAPI, sourceBase: string): void {
-  $(`meta[name="${FRAME_SOURCE_BASE_META_NAME}"]`).remove();
-  $('<meta>')
-    .attr('name', FRAME_SOURCE_BASE_META_NAME)
-    .attr('content', sourceBase)
-    .appendTo('head');
-}
-
 export async function GET(
   request: Request,
   { params }: { params: { site: string; path?: string[] } }
@@ -273,10 +229,8 @@ export async function GET(
     $s('meta[http-equiv="Content-Security-Policy"]').remove();
     $s('meta[http-equiv="X-Frame-Options"]').remove();
     disableStoredHtmlExecution($s);
-    // Remove existing base tag so ours takes precedence
-    $s('base').remove();
-    // Inject base tag so relative assets still resolve against the source page.
-    $s('head').prepend(`<base href=${JSON.stringify(targetUrl)}>`);
+    // Keep the source's directory semantics for relative assets and links.
+    installFrameSourceBase($s, sourceBase);
     injectFrameDarkModeStyles($s);
     return new Response($s.html(), {
       status: 200,
@@ -299,8 +253,7 @@ export async function GET(
   // Remove CSP meta tags so the page can load proxied resources
   $('meta[http-equiv="Content-Security-Policy"]').remove();
   $('meta[http-equiv="X-Frame-Options"]').remove();
-  $('base').remove();
-  $('head').prepend(`<base href=${JSON.stringify(toAppScopedBaseUrl(site, base, appOrigin))}>`);
+  installFrameSourceBase($, base, toAppScopedBaseUrl(site, base, appOrigin));
 
   const proxiedFrameResourceUrl = (absolute: string): string => (
     isSameOriginUrl(absolute, pageUrl.origin)

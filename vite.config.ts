@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import vinext, { type NextConfig } from "vinext";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { VitePWA } from 'vite-plugin-pwa';
+import { syncEngineVinext } from "@mintcd/sync-engine-vinext/vite";
 
 export const nextConfig = {
   reactStrictMode: false,
@@ -14,12 +15,6 @@ export const nextConfig = {
         headers: [
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
           { key: "Service-Worker-Allowed", value: "/" },
-        ],
-      },
-      {
-        source: "/sw.sync.js",
-        headers: [
-          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
         ],
       }
     ];
@@ -36,6 +31,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    syncEngineVinext(),
     vinext(),
     cloudflare({
       viteEnvironment: {
@@ -44,18 +40,18 @@ export default defineConfig({
       },
     }),
     VitePWA({
-      // Use injectManifest to keep your custom Cloudflare D1/IndexedDB sync logic
+      // Bundle the sync host together with Workbox and frame caching.
       strategies: 'injectManifest',
       srcDir: 'public',
       filename: 'sw.js',
+      outDir: 'dist/client',
       // Registration is handled manually in ServiceWorkerRegister.tsx so we
       // can control the update lifecycle (skip-waiting + controlled reload).
       registerType: 'prompt',
+      injectRegister: false,
       injectManifest: {
         // Defines which compiled assets to precache
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Exclude sw.sync.js from precache list (it's imported directly by sw.js)
-        globIgnores: ['sw.sync.js'],
       },
       manifest: {
         name: 'HTML Annotation App',
@@ -88,6 +84,11 @@ export default defineConfig({
           }
         ]
       }
-    })
+    }).map(plugin => ({
+      ...plugin,
+      // Vinext builds RSC and SSR separately. Only browser assets belong in
+      // the precache, and the bundled worker must replace the public source.
+      applyToEnvironment: environment => environment.name === 'client',
+    }))
   ],
 });

@@ -99,17 +99,29 @@ export async function fetchOutboundUrl(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const response = await fetchOnce(fetchImpl, currentUrl, {
-    ...requestInit,
-    // redirect: 'manual',
-    // signal: controller.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetchOnce(fetchImpl, currentUrl, {
+      ...requestInit,
+      // redirect: 'manual',
+      // signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // The runtime follows redirects automatically. Use the response URL so
+  // downstream relative-URL rewriting keeps the final document's path
+  // semantics (including a redirect-added trailing slash).
+  const finalUrl = response.url
+    ? validateOutboundUrl(response.url)
+    : currentUrl;
 
   // if (response.ok && allowedContentTypes) {
   //   validateContentType(response, allowedContentTypes, allowMissingContentType);
   // }
 
-  return { response, finalUrl: currentUrl };
+  return { response, finalUrl };
 
 
   // try {

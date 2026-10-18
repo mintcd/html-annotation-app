@@ -6,13 +6,15 @@
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = Record<string, unknown>>(): Promise<T | null>;
-  all<T = Record<string, unknown>>(): Promise<{ results?: T[] }>;
+  all<T = Record<string, unknown>>(): Promise<{ success: boolean; results: T[] }>;
   run(): Promise<unknown>;
 }
 
 interface D1DatabaseBinding {
   prepare(query: string): D1PreparedStatement;
-  batch(statements: D1PreparedStatement[]): Promise<unknown>;
+  batch<T = unknown>(
+    statements: D1PreparedStatement[],
+  ): Promise<{ success: boolean; results: T[] }[]>;
 }
 
 interface R2ObjectBodyBinding {

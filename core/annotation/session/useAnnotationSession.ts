@@ -14,6 +14,8 @@ import {
   applyFrameDarkMode,
   framePathFromUrl,
   prepareFrameDocument,
+  sameDocumentFragment,
+  scrollToFrameFragment,
   startExternalLinkInterceptor,
 } from '../../frame/runtime';
 import {
@@ -312,6 +314,21 @@ export function useAnnotationSession({
     };
   }, [activeDocument, activeRoot, darkMode]);
 
+  useEffect(() => {
+    if (!activeDocument) return;
+
+    const scrollToCurrentFragment = () => {
+      scrollToFrameFragment(activeDocument, window.location.hash);
+    };
+
+    // The fragment is only available in the browser, after the server-rendered
+    // frame URL has loaded. Scroll the existing document instead of changing
+    // its src, which would trigger a second frame navigation.
+    scrollToCurrentFragment();
+    window.addEventListener('hashchange', scrollToCurrentFragment);
+    return () => window.removeEventListener('hashchange', scrollToCurrentFragment);
+  }, [activeDocument]);
+
   const disposeAnnotationMatching = useCallback(() => {
     annotationMatchIdRef.current++;
     annotationMatchCleanupRef.current?.();
@@ -409,6 +426,10 @@ export function useAnnotationSession({
       prepared.cleanup();
       return;
     }
+
+    // The parent fragment is not part of the HTTP request or iframe URL.
+    // Apply it as soon as the loaded document is available.
+    scrollToFrameFragment(prepared.document, window.location.hash);
 
     const preparedTitle = prepared.title.trim();
     const page = await ensurePage(pageUrl, titleRef.current || preparedTitle, runtime);
@@ -519,6 +540,15 @@ export function useAnnotationSession({
   }, [clearDocumentSnapshot, iframeUrl]);
 
   const openInAnnotator = useCallback(async (href: string) => {
+    const fragment = sameDocumentFragment(href, pageUrl);
+    if (fragment && activeDocument) {
+      const appUrl = new URL(window.location.href);
+      appUrl.hash = fragment;
+      window.history.pushState(null, '', `${appUrl.pathname}${appUrl.search}${appUrl.hash}`);
+      scrollToFrameFragment(activeDocument, fragment);
+      return;
+    }
+
     const normalized = normalizeUrl(href);
     await ensurePage(normalized, '', runtime);
 
@@ -526,7 +556,7 @@ export function useAnnotationSession({
     const website = await getOrCreateWebsite(sourceUrl.origin, runtime);
     await ensureWebsiteAvailableForRoute(website);
     window.location.href = toAnnotatorPath(website.id, href, normalized);
-  }, [runtime]);
+  }, [activeDocument, pageUrl, runtime]);
 
   const openOriginal = useCallback((href: string) => {
     window.open(href, '_blank', 'noopener');

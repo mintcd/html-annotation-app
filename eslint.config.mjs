@@ -5,6 +5,8 @@ import nextTypeScript from 'eslint-config-next/typescript';
 export default defineConfig([
   globalIgnores([
     '.next/**',
+    '.vinext/**',
+    '.sync-engine/**',
     '.wrangler/**',
     'build/**',
     'coverage/**',
@@ -13,7 +15,8 @@ export default defineConfig([
     'out/**',
     'app/api/**',
     'public/sw.js',
-    'public/sw.sync.js',
+    'sync/*.generated.ts',
+    'worker-configuration.d.ts',
     'utils/engine.ts',
     '*.tsbuildinfo',
     'next-env.d.ts',

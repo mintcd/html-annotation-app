@@ -1,19 +1,9 @@
-import {
-  getD1RowSyncStateRows,
-  readD1RowSyncState,
-  type D1DatabaseLike,
-} from "@mintcd/sync-engine/next";
-import type { ReplicaDatabaseState } from "@mintcd/sync-engine/client";
-import {
-  replicaSchema,
-  type TableName,
-} from "@/app/sync/sync.generated";
-import { getEnv } from "../utils/env";
+import { env } from "cloudflare:workers";
+import type { TableName } from "../../sync/types";
+import { ensureLegacySyncImported } from "./syncLegacyImport";
+import { readSyncDatabaseState } from "./syncStateQueries";
+import type { SyncMaterializedState } from "./syncStateQueries";
 import type { SyncSession } from "./syncIdentity";
-
-const SYNC_TABLE_PREFIX = "html_annotation_sync";
-
-type SyncMaterializedState = ReplicaDatabaseState;
 
 export async function readSyncStreamState(
   session: SyncSession,
@@ -22,25 +12,15 @@ export async function readSyncStreamState(
     return null;
   }
 
-  return readD1RowSyncState({
-    database: getEnv().DB as unknown as D1DatabaseLike,
-    streamId: session.streamId,
-    schema: replicaSchema,
-    tablePrefix: SYNC_TABLE_PREFIX,
-  });
+  const database = await ensureLegacySyncImported(env.DB, session.streamId);
+  return readSyncDatabaseState(database);
 }
 
 export function getSyncStateRows<Row extends Record<string, unknown>>(
   state: SyncMaterializedState | null,
   tableName: string,
 ): Row[] {
-  return [
-    ...getD1RowSyncStateRows(
-      replicaSchema,
-      state,
-      tableName as TableName,
-    ),
-  ] as unknown as Row[];
+  return [...(state?.[tableName as TableName] ?? [])] as Row[];
 }
 
 export function findSyncStateRow<Row extends Record<string, unknown>>(

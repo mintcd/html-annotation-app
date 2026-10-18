@@ -2,6 +2,9 @@
 
 This page is a quick lookup for where code lives.
 
+For behavior and rationale, start with the [requirements](../requirements/README.md),
+[architecture](../architecture.md), and [ADRs](../adr/README.md).
+
 ## App Routes
 
 - [app/layout.tsx](../../app/layout.tsx): global layout, sync provider, service worker registration, offline banner
@@ -13,8 +16,7 @@ This page is a quick lookup for where code lives.
 ## API Routes
 
 - `app/api/auth/*`: signup, login, logout, session
-- [app/api/sync/pull/route.ts](../../app/api/sync/pull/route.ts): generated sync pull endpoint
-- [app/api/sync/push/route.ts](../../app/api/sync/push/route.ts): generated sync push endpoint
+- [app/api/sync/route.ts](../../app/api/sync/route.ts): generated POST sync endpoint
 - [app/api/websites/route.ts](../../app/api/websites/route.ts): server-side website lookup from sync state
 - [app/api/webpages/route.ts](../../app/api/webpages/route.ts): save pasted HTML to R2
 - [app/api/website-metadata/route.ts](../../app/api/website-metadata/route.ts): fetch title/logo candidates
@@ -55,6 +57,8 @@ This page is a quick lookup for where code lives.
 - [core/frame/cache.ts](../../core/frame/cache.ts): client-side frame cache API
 - [core/frame/cacheScope.ts](../../core/frame/cacheScope.ts): user-scoped frame cache search param helpers
 - [core/frame/pastedHtml.ts](../../core/frame/pastedHtml.ts): R2 key normalization for stored HTML
+- [core/frame/sourceBase.ts](../../core/frame/sourceBase.ts): effective source URL after redirects and source base resolution
+- [core/frame/fragments.ts](../../core/frame/fragments.ts): outer/inner frame fragment transfer
 - [core/frame/runtime/index.ts](../../core/frame/runtime/index.ts): iframe document preparation, reading mode, dark mode, link interception
 - [core/frame/darkMode.ts](../../core/frame/darkMode.ts): dark mode color transforms
 - [core/frame/externalLinks.ts](../../core/frame/externalLinks.ts): iframe link interception
@@ -66,14 +70,22 @@ This page is a quick lookup for where code lives.
 - [core/persistence/syncIdentity.ts](../../core/persistence/syncIdentity.ts): user/session/stream IDs
 - [core/persistence/syncServerState.ts](../../core/persistence/syncServerState.ts): server reads from materialized sync state
 - [core/persistence/useHighlightColors.ts](../../core/persistence/useHighlightColors.ts): seeded highlight colors
-- [app/sync/server.ts](../../app/sync/server.ts): D1 sync authority
-- [app/sync/sync.generated.ts](../../app/sync/sync.generated.ts): generated sync schema/config
+- [core/persistence/syncClientLifecycle.ts](../../core/persistence/syncClientLifecycle.ts): serialized account/session lifecycle
+- [core/persistence/syncSessionCache.ts](../../core/persistence/syncSessionCache.ts): last verified identity for offline recovery
+- [core/persistence/syncLegacyImport.ts](../../core/persistence/syncLegacyImport.ts): resumable per-stream old canonical-log import
+- [core/persistence/syncQueries.ts](../../core/persistence/syncQueries.ts): cursor-aware collection reads
+- [core/persistence/syncStateQueries.ts](../../core/persistence/syncStateQueries.ts): server-side declared-index query intervals
+- [core/persistence/syncServerAuth.ts](../../core/persistence/syncServerAuth.ts): sync request identity, Origin and stream access checks
+- [sync-engine.config.ts](../../sync-engine.config.ts): explicit logical sync schema
+- [sync/server.ts](../../sync/server.ts): application auth and CRUD policy hooks
+- [sync/client.ts](../../sync/client.ts): client factory for the existing Workbox worker
+- [sync/model.generated.ts](../../sync/model.generated.ts): generated shared model
+- [sync/types.ts](../../sync/types.ts): inferred application row aliases
 
 ## Platform
 
 - [worker/index.ts](../../worker/index.ts): Cloudflare Worker entry point
 - [public/sw.js](../../public/sw.js): app service worker and frame cache
-- [public/sw.sync.js](../../public/sw.sync.js): generated sync worker imported by `sw.js`
 - [wrangler.jsonc](../../wrangler.jsonc): Cloudflare bindings
 - [vite.config.ts](../../vite.config.ts): Vinext, Cloudflare, and PWA build config
 
