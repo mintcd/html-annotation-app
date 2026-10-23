@@ -61,10 +61,17 @@ npm run build
 ```
 
 `sync:check` checks generated-source drift without writing. `npm test` uses
-Node's test runner on `tests/*.test.ts`; `typecheck` runs `tsc --noEmit`, and
+Node's test runner on `tests/*.test.ts`; `typecheck` generates Vinext route
+types before running `tsc --noEmit`, and
 `lint` runs the configured Vinext lint command. `prebuild` regenerates sync
 sources before the build, so inspect generated changes. Refresh binding
 declarations with `npm run cf:typegen` after changing Wrangler bindings.
+
+Vinext supplies the runtime and types for the app's `next/*` imports; the
+`next` package is not required. Keep the direct Miniflare version aligned with
+Wrangler and the Cloudflare Vite plugin, since the D1 tests use its API. The
+scoped `satori` override selects the patched `fflate` 0.7 release until Satori
+updates its pinned dependency; review it when upgrading Vinext.
 
 | Area | Existing checks |
 | --- | --- |

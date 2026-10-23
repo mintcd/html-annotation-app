@@ -12,7 +12,7 @@ import {
 } from "react";
 import { Button } from "./design-system/button";
 import TextEditor from "./text-editor";
-import { Save, Times } from "../app/icons";
+import { Save, Times } from "./icons";
 import styles from "./styles/PageNoteEditor.styles";
 
 type PageNoteEditorProps = {

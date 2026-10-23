@@ -4,7 +4,7 @@ import ColorPicker from "./ColorPicker";
 import { useAnnotationContext } from "./Annotator.context";
 import { useAnnotatorOverlayOptional } from "./AnnotatorOverlay.context";
 import { useCoarsePointer } from "../hooks";
-import { Delete, Highlighter, Comment, Resize, Send } from "../app/icons";
+import { Delete, Highlighter, Comment, Resize, Send } from "./icons";
 import { IconButton } from "./design-system/icon-button";
 import useMenuOnFocusStyles from "./styles/MenuOnFocus.styles";
 import AnnotationResizeHandles from "./AnnotationResizeHandles";

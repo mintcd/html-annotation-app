@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAnnotationContext } from './Annotator.context';
 import { useAnnotatorOverlayOptional } from './AnnotatorOverlay.context';
-import { Save, Times } from '../app/icons';
+import { Save, Times } from './icons';
 import { Button } from './design-system/button';
 import { useCoarsePointer } from '../hooks';
 import sticksStyles from './styles/Sticks.styles';

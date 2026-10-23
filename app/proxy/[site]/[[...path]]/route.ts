@@ -4,9 +4,8 @@
 // Middleware also routes same-origin fallback requests from runtime-generated
 // relative URLs to this handler so it can fetch the real upstream content.
 //
-// Because the browser believes the asset lives under /proxy/{slug}/path/,
-// relative imports/url() values inside CSS and scripts keep resolving through
-// this same asset proxy path.
+// CSS dependencies resolve against the final upstream stylesheet URL and are
+// mapped to explicit proxy URLs. Script bodies pass through unchanged.
 
 import {
   OutboundFetchError,
@@ -15,6 +14,8 @@ import {
   readResponseText,
 } from "@/core/net/outboundFetch";
 import { syncSessionFromRequest } from "@/core/persistence/syncIdentity";
+import { rewriteProxyCss } from "@/core/frame/proxyCss";
+import { sourcePathnameFromRoute } from "@/core/frame/urlRewrite";
 import {
   findSyncStateRow,
   readSyncStreamState,
@@ -51,7 +52,7 @@ export async function GET(
     return new Response("Database unavailable", { status: 503 });
   }
 
-  const pathname = path?.length ? "/" + path.join("/") : "/";
+  const pathname = sourcePathnameFromRoute(path, reqUrl.pathname);
   const search = reqUrl.search || "";
   const targetUrl = `${siteOrigin}${pathname}${search}`;
 
@@ -62,6 +63,7 @@ export async function GET(
   };
 
   let upstream: Response;
+  let finalUrl: URL;
   try {
     const result = await fetchOutboundUrl(targetUrl, {
       method: "GET",
@@ -71,6 +73,7 @@ export async function GET(
       timeoutMs: PROXY_FETCH_TIMEOUT_MS,
     });
     upstream = result.response;
+    finalUrl = result.finalUrl;
   } catch (error) {
     return new Response(
       error instanceof Error ? error.message : "Upstream fetch failed",
@@ -137,7 +140,8 @@ export async function GET(
     }
 
 
-    return new Response(text, {
+    const css = rewriteProxyCss(text, finalUrl.href, site, siteOrigin, reqUrl.origin);
+    return new Response(css, {
       status: upstream.status,
       headers: {
         'Content-Type': ct || 'text/css; charset=utf-8',

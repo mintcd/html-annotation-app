@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { PasteHtml } from '../app/icons';
+import { PasteHtml } from './icons';
 import { Button } from './design-system/button';
 import promptBoxStyles from './styles/PromptBox.styles';
 import pasteHtmlStyles from './styles/PasteHTML.styles';

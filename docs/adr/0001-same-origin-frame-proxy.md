@@ -2,7 +2,7 @@
 
 Status: Accepted (retrospective record of the current implementation).
 
-Date: 2026-10-18
+Date: 2026-10-18. Updated: 2026-10-23.
 
 Requirements: [F01-F10, F19](../requirements/page-loading.md).
 
@@ -24,17 +24,39 @@ The outer iframe permits scripts, same-origin access, and forms, so fetched
 source scripts execute in the app origin.
 
 For fetched HTML, derive the source base from the final response URL and authored
-base element. Retain it in `annotation-source-base` metadata, install an
-app-scoped document base, and rewrite supported same-origin resource attributes
-and inline CSS URLs to absolute `/proxy/{site}/...` URLs. Keep other resource
-origins external and resolve anchors and form actions to source URLs. Remove
-frame-blocking meta elements, resource hints, and configured third-party scripts.
+base element. Retain it in `annotation-source-base` metadata. When the source base
+belongs to the stored site origin, install an app-origin document base at
+`/proxy/{site}/{complete-source-path}?source-query`. Preserve native relative
+resource references when the browser resolves them to the intended proxy URL;
+rewrite root-relative, absolute, and escaping references where needed. Keep
+other origins external, including authored bases on another origin. Resolve
+anchors and form actions to absolute source URLs, including fragment-only links.
+Remove frame-blocking meta elements, resource hints, and configured third-party
+scripts. Canonical and Open Graph trailing-slash recovery applies only to pasted
+source; fetched HTML follows the final source URL and authored base.
 
-Fetch proxy resources using the stored site origin. Return script/CSS text and
-buffered binary bodies with appropriate headers; do not rewrite their contents.
-Relative references can resolve through the proxy path. Middleware provides an
-additional fallback for some runtime resource requests using the frame referer
-or, when absent, a site cookie.
+Fetch proxy resources using the stored site origin. Rewrite CSS dependencies
+against the final stylesheet URL, including imports with qualifiers. Dependencies
+on the stored site origin use the asset proxy; others remain external. Return
+JavaScript unchanged and buffer asset bodies within their read limit.
+Remove integrity hashes from proxied stylesheet links because rewriting changes
+the response bytes. Retain integrity on direct external stylesheets and scripts.
+
+Middleware provides a narrow fallback for eligible GET, HEAD, or OPTIONS resource
+requests when the referer comes from the app origin and its path starts with the
+exact `/frame/{site}` or `/proxy/{site}` route. Prefer fetch destination over the
+Accept header when classifying a request. Retain legacy `/{site}/...` asset prefix
+handling for saved HTML, but do not infer a site from cookies. Protect app internals, APIs, and
+explicit frame/proxy resources from remapping. Iframe navigations from
+`/{site}/...` or `/proxy/{site}/...` use the frame handler while preserving the
+path's trailing slash and query. A `?frame` query parameter does not enable this
+behavior.
+
+Keep `/frame` document routes and scoped browser cache identity stable. Pasted
+source retains its source document base, disabled execution transforms, and
+direct asset loading. Existing saved frames adopt the new transformation through
+**Refresh saved page** after deployment; no cache reset or version change is
+required.
 
 Handled frame fetch failures use an HTTP 200 error document carrying both a
 `frame-error` meta element and an error response header. The parent can offer
@@ -71,6 +93,13 @@ website row, and some sites still reject automatic requests or fail to reproduce
 their runtime behavior. Proxy asset requests do not forward the page's saved
 site cookie.
 
+The proxy base removes middleware from normal relative resource loading. It
+cannot add the site prefix to runtime root-relative URLs; without a qualifying
+referer, middleware cannot identify their source site. It also does not rewrite
+`window.location` or arbitrary URL strings inside JavaScript. Separate document
+and asset routes keep these responsibilities explicit without changing saved
+frame identities.
+
 Source script execution shares the app origin. The iframe configuration and
 selective rewriting are not an origin isolation boundary. URL rewriting and
 host validation have the limits described above. The current behavior and those
@@ -78,7 +107,12 @@ limits are captured in the [page loading requirements](../requirements/page-load
 
 Implementation: [frame handler](../../app/frame/[site]/[[...path]]/route.ts),
 [asset handler](../../app/proxy/[site]/[[...path]]/route.ts),
+[HTML rewriting](../../core/frame/rewriteHtml.ts),
+[CSS dependencies](../../core/frame/proxyCss.ts),
 [rewrite helpers](../../core/frame/urlRewrite.ts),
 [source bases](../../core/frame/sourceBase.ts),
 [outbound helper](../../core/net/outboundFetch.ts), and
-[middleware](../../proxy.ts).
+[middleware routing](../../core/frame/routing.ts).
+Focused examples: [HTML rewriting](../../tests/frameHtmlRewrite.test.ts),
+[request routing](../../tests/frameRouting.test.ts), and
+[proxy CSS](../../tests/proxyCss.test.ts).

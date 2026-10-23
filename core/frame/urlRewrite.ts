@@ -16,11 +16,7 @@ export function resolveUrl(baseUrl: string, value: string): string {
   try {
     return new URL(trimmed, baseUrl).href;
   } catch {
-    try {
-      return new URL(trimmed, new URL('.', baseUrl)).href;
-    } catch {
-      return value;
-    }
+    return value;
   }
 }
 
@@ -32,6 +28,18 @@ export function isSameOriginUrl(value: string, origin: string): boolean {
   }
 }
 
+export function sourcePathnameFromRoute(
+  pathSegments: string[] | undefined,
+  requestPathname: string,
+): string {
+  const pathname = pathSegments?.length
+    ? `/${pathSegments.map((segment) => encodeURIComponent(segment)).join('/')}`
+    : '/';
+  return requestPathname.endsWith('/') && !pathname.endsWith('/')
+    ? `${pathname}/`
+    : pathname;
+}
+
 export function toProxyAssetPath(site: string, targetUrl: string): string {
   const url = new URL(targetUrl);
   return `${PROXY_ROUTE_PREFIX}/${encodeURIComponent(site)}${url.pathname}${url.search}${url.hash}`;
@@ -40,11 +48,6 @@ export function toProxyAssetPath(site: string, targetUrl: string): string {
 export function toProxyAssetUrl(site: string, targetUrl: string, appOrigin?: string): string {
   const path = toProxyAssetPath(site, targetUrl);
   return appOrigin ? new URL(path, appOrigin).href : path;
-}
-
-export function toAppScopedBaseUrl(site: string, sourceBaseUrl: string, appOrigin: string): string {
-  const url = new URL(sourceBaseUrl);
-  return new URL(`/${encodeURIComponent(site)}${url.pathname}`, appOrigin).href;
 }
 
 export function stripSitePrefixFromPath(site: string, pathname: string): string {
@@ -72,14 +75,6 @@ export function toProxyAssetPathFromFrameRequest(
   return `${PROXY_ROUTE_PREFIX}/${encodeURIComponent(site)}${sourcePath}${requestSearch}`;
 }
 
-export function frameSiteFromPathname(pathname: string): string | null {
-  const parts = pathname.split('/').filter(Boolean);
-  const frameIndex = parts.findIndex(
-    (part) => `/${part}` === FRAME_ROUTE_PREFIX,
-  );
-  return frameIndex >= 0 && parts.length > frameIndex + 1 ? parts[frameIndex + 1] : null;
-}
-
 export function rewriteSrcset(srcset: string, rewriteUrl: (url: string) => string): string {
   return srcset
     .split(',')
@@ -99,12 +94,12 @@ export function rewriteSrcset(srcset: string, rewriteUrl: (url: string) => strin
 export function rewriteCssUrls(
   cssText: string,
   cssUrl: string,
-  rewriteUrl: (absoluteUrl: string) => string,
+  rewriteUrl: (absoluteUrl: string, rawUrl: string) => string,
 ): string {
   const rewriteCssReference = (rawUrl: string): string | null => {
     const url = rawUrl.trim();
     if (shouldSkipUrlRewrite(url)) return null;
-    return rewriteUrl(resolveUrl(cssUrl, url));
+    return rewriteUrl(resolveUrl(cssUrl, url), url);
   };
 
   let rewritten = cssText.replace(
@@ -116,10 +111,10 @@ export function rewriteCssUrls(
   );
 
   rewritten = rewritten.replace(
-    /@import\s+(['"])([^'";\)]+)\1\s*;/g,
+    /@import\s+(['"])([^'"]+)\1/g,
     (match, quote: string, rawUrl: string) => {
       const rewrittenUrl = rewriteCssReference(rawUrl);
-      return rewrittenUrl ? `@import ${quote}${rewrittenUrl}${quote};` : match;
+      return rewrittenUrl ? `@import ${quote}${rewrittenUrl}${quote}` : match;
     },
   );
 

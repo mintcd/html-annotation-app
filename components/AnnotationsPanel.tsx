@@ -6,7 +6,7 @@ import { useAnnotationContext } from "./Annotator.context";
 import { useMobile, useHotkey, useClickOutside } from "../hooks";
 import AnnotationList from "./AnnotationList";
 import PageNoteEditor from "./PageNoteEditor";
-import { BoxList, DarkMode, LightMode, Sort, PasteHtml, ReadingMode, Refresh, Times } from "../app/icons";
+import { BoxList, DarkMode, LightMode, Sort, PasteHtml, ReadingMode, Refresh, Times } from "./icons";
 import { Badge } from "./design-system/badge";
 import { IconButton } from "./design-system/icon-button";
 import Dropdown from "./Dropdown";

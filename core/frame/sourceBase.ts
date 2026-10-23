@@ -15,6 +15,10 @@ function validSourceBase(value: string | undefined, fallback: string): string | 
   }
 }
 
+export function htmlSourceBase($: cheerio.CheerioAPI, fallback: string): string {
+  return validSourceBase($('base[href]').first().attr('href'), fallback) ?? fallback;
+}
+
 export function storedHtmlSourceBase($: cheerio.CheerioAPI, fallback: string): string {
   const authoredBase = validSourceBase($('base[href]').first().attr('href'), fallback);
   if (authoredBase) return authoredBase;
@@ -32,7 +36,11 @@ export function storedHtmlSourceBase($: cheerio.CheerioAPI, fallback: string): s
     const resolvedUrl = new URL(resolved);
     const sameDocumentPath = resolvedUrl.origin === fallbackUrl.origin
       && resolvedUrl.pathname.replace(/\/$/, '') === fallbackUrl.pathname.replace(/\/$/, '');
-    if (sameDocumentPath && resolvedUrl.pathname.endsWith('/')) return resolved;
+    if (sameDocumentPath && resolvedUrl.pathname.endsWith('/')) {
+      // Restore directory semantics without replacing this document's query.
+      fallbackUrl.pathname = resolvedUrl.pathname;
+      return fallbackUrl.href;
+    }
   }
 
   return fallback;

@@ -1,6 +1,5 @@
 # Documentation
 
-The documentation follows the requirements and ADR structure used in sync-engine.
 Requirements state observable behavior; architecture describes the parts and
 their ownership; ADRs record consequential choices and their tradeoffs.
 
@@ -19,11 +18,11 @@ and checks that still require a browser or deployed bindings.
 
 ## Requirements
 
-| Document | Scope | IDs |
-| --- | --- | --- |
-| [Application](requirements/application.md) | Saved pages, search, notes, titles, and palette | P01-P12 |
-| [Annotations](requirements/annotations.md) | Text anchors, matching, highlights, excerpts, and editing | A01-A13 |
-| [Page loading](requirements/page-loading.md) | Frame/proxy behavior, pasted HTML, and frame caches | F01-F19 |
+| Document                                       | Scope                                                          | IDs     |
+| ---------------------------------------------- | -------------------------------------------------------------- | ------- |
+| [Application](requirements/application.md)     | Saved pages, search, notes, titles, and palette                | P01-P12 |
+| [Annotations](requirements/annotations.md)     | Text anchors, matching, highlights, excerpts, and editing      | A01-A13 |
+| [Page loading](requirements/page-loading.md)   | Frame/proxy behavior, pasted HTML, and frame caches            | F01-F19 |
 | [Sync and auth](requirements/sync-and-auth.md) | Persistence, delivery, accounts, authority access, and upgrade | S01-S25 |
 
 ## Operations And Reference

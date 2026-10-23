@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
-import { Highlighter } from "../app/icons";
+import { Highlighter } from "./icons";
 import { Button } from "./design-system/button";
 import useMenuStyles from "./styles/MenuOnRange.styles";
 import { useAnnotationContext } from "./Annotator.context";

@@ -68,7 +68,7 @@ See [docs/README.md](docs/README.md) for the full documentation index.
 
 ## Deployment Runtime
 
-The app is built with Vinext/Next and deployed to Cloudflare Workers. Cloudflare
+The app is built with Vinext and deployed to Cloudflare Workers. Cloudflare
 bindings are configured in [wrangler.jsonc](wrangler.jsonc):
 
 - `DB`: D1 database for auth and sync data

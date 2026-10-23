@@ -1,6 +1,6 @@
 # Page loading requirements
 
-Status: Current baseline. Date: 2026-10-18.
+Status: Current baseline. Date: 2026-10-23.
 
 ## Purpose and scope
 
@@ -24,10 +24,10 @@ origin. The decisions are recorded in [ADR-0001](../adr/0001-same-origin-frame-p
 | F02 | Keep the source page identity separate from browser cache scope. | The route produces the original page URL and a `/frame/{site}/...` URL carrying `__annotation_cache_scope`; the frame route removes that parameter before constructing the upstream URL and pasted HTML key. |
 | F03 | Prefer saved source HTML for the current page. | A nonempty R2 object at the current user/site/path/query key is rendered without fetching upstream HTML; absence falls back to the source URL. |
 | F04 | Make fetched HTML readable by the parent annotator. | `/frame/{site}/...` returns rewritten HTML from the app origin with `X-Frame-Options: SAMEORIGIN` and `Cache-Control: no-store`; the parent can access the iframe document. Fetched source scripts remain executable. |
-| F05 | Preserve source URL resolution while proxying supported resource references. | Fetched HTML resolves URLs using the final response URL and any source `<base>`. Same-origin `src`, link resource `href`, `srcset`, and inline CSS references become absolute app-origin `/proxy/{site}/...` URLs. Other source origins remain absolute external URLs. Anchors and form actions resolve to source URLs. |
-| F06 | Retain source base information for parent link handling. | The frame contains an `annotation-source-base` meta value. Fetched frames install an app-scoped document base; stored frames retain a source document base. Relative links such as `./#section` can be resolved using source directory semantics. |
-| F07 | Serve proxy assets with bounded response reads. | `/proxy/{site}/...` resolves the current session's website origin, fetches the asset, reads at most 10 MiB, and returns the body with content type, cache, CORS, and `nosniff` headers. Script and CSS text are returned without rewriting their contents. |
-| F08 | Recover some runtime-generated relative resource requests. | Middleware maps eligible GET, HEAD, or OPTIONS resource requests to `/proxy/{site}/...` using a frame referer, or `__proxy_site` when no referer exists, and strips an app route site prefix. App internals and API/frame/proxy routes bypass this fallback. Iframe navigations can map to `/frame/...`. |
+| F05 | Preserve source URL resolution while proxying supported resource references. | Fetched HTML resolves URLs using the final response URL and any authored `<base>`. When that base belongs to the stored site origin, the document base becomes `/proxy/{site}/{complete-source-path}?source-query`; otherwise it remains external. Supported relative resource references stay unchanged when the browser resolves them to the intended target. Root-relative, absolute, and escaping references are rewritten as needed, proxying only the stored site origin. Anchors and form actions become absolute source URLs, including fragments. |
+| F06 | Retain source base information for parent link handling. | The frame contains an `annotation-source-base` meta value preserving the original source base. Fetched frames use a proxy document base when its origin is representable by the site route; stored frames retain a source document base. Relative links such as `./#section` retain source directory semantics. Canonical and Open Graph URLs can restore trailing slashes only for pasted source, not fetched HTML. |
+| F07 | Serve proxy assets with bounded response reads. | `/proxy/{site}/...` resolves the current session's website origin, fetches the asset, reads at most 10 MiB, and returns the body with content type, cache, CORS, and `nosniff` headers. CSS dependencies, including imports with qualifiers, resolve against the final stylesheet URL and are proxied only for the stored site origin; other origins remain external. JavaScript text passes through unchanged. |
+| F08 | Recover some runtime-generated resource requests. | Middleware maps eligible GET, HEAD, or OPTIONS resource requests to `/proxy/{site}/...` only when the referer comes from the app origin and its path starts with the exact `/frame/{site}` or `/proxy/{site}` route. Fetch destination takes precedence over the Accept header. Legacy `/{site}/...` asset prefixes remain supported; no site is inferred from cookies. App internals, APIs, and explicit frame/proxy resources bypass fallback. Iframe navigations from `/{site}/...` or `/proxy/{site}/...` map to `/frame/{site}/...` without losing trailing slashes or query parameters; `?frame` does not activate routing. |
 | F09 | Reject unsupported outbound URL forms and bound HTML reads. | Outbound validation rejects non-HTTP(S) URLs, embedded credentials, and recognized local, private, reserved, or infrastructure literal hosts. The frame HTML reader rejects bodies over 5 MiB, and the asset reader rejects bodies over 10 MiB. |
 | F10 | Signal handled frame fetch failures to the annotator. | An unknown frame site, non-success upstream response, or caught fetch/read error produces an HTTP 200 document containing `meta[name="frame-error"]`, `X-Annotation-Frame-Error: 1`, and `Cache-Control: no-store`. The parent recognizes the marker and offers the pasted HTML action. |
 
@@ -43,6 +43,17 @@ Frame rewriting removes frame-blocking CSP/X-Frame-Options meta elements, resour
 hints, and a configured set of third-party script hosts. It does not provide a
 general compatibility or sanitization layer. Asset bodies are buffered within
 their read limit; they are not streamed through unchanged as they arrive.
+Proxied stylesheet links lose their source integrity hashes because dependency
+rewriting changes the CSS bytes. Direct external stylesheets and scripts retain
+their integrity attributes.
+
+The proxy base preserves native relative resource resolution, but cannot attach
+a site prefix to runtime root-relative URLs. Those requests need a qualifying
+referer for middleware fallback; requests without one cannot identify the source
+site. The base does not rewrite `window.location` or arbitrary URL strings in
+JavaScript. Frame routes and browser cache identities remain unchanged. Existing
+saved pages retain their old HTML until the user selects **Refresh saved page**
+after deployment; rewriting changes do not clear caches or change cache versions.
 
 ## Pasted source requirements
 
@@ -87,6 +98,9 @@ available offline.
   [asset route](../../app/proxy/[site]/[[...path]]/route.ts), and
   [middleware](../../proxy.ts).
 - Source handling: [URL rewriting](../../core/frame/urlRewrite.ts),
+  [HTML rewriting](../../core/frame/rewriteHtml.ts),
+  [CSS dependencies](../../core/frame/proxyCss.ts),
+  [request routing](../../core/frame/routing.ts),
   [source bases](../../core/frame/sourceBase.ts),
   [pasted storage keys](../../core/frame/pastedHtml.ts),
   [pasted source API](../../app/api/webpages/route.ts), and
@@ -98,6 +112,9 @@ available offline.
 - Focused examples: [cache identity](../../tests/frameCache.test.ts),
   [storage keys](../../tests/pastedHtml.test.ts),
   [URL rewriting](../../tests/urlRewrite.test.ts),
+  [frame HTML rewriting](../../tests/frameHtmlRewrite.test.ts),
+  [frame routing](../../tests/frameRouting.test.ts),
+  [proxy CSS](../../tests/proxyCss.test.ts),
   [source bases](../../tests/sourceBase.test.ts),
   [redirect source base](../../tests/outboundRedirect.test.ts), and
   [fragments](../../tests/frameFragment.test.ts). These tests are not proof of a

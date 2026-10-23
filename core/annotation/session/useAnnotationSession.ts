@@ -14,7 +14,7 @@ import {
   applyFrameDarkMode,
   framePathFromUrl,
   prepareFrameDocument,
-  sameDocumentFragment,
+  navigateToFrameFragment,
   scrollToFrameFragment,
   startExternalLinkInterceptor,
 } from '../../frame/runtime';
@@ -508,7 +508,9 @@ export function useAnnotationSession({
   useEffect(() => {
     const doc = snapshot.document;
     if (!doc || !onExternalHref) return;
-    return startExternalLinkInterceptor(doc, onExternalHref, { sourcePageUrl: pageUrl });
+    return startExternalLinkInterceptor(doc, (href) => {
+      if (!navigateToFrameFragment(doc, href, pageUrl, window)) onExternalHref(href);
+    }, { sourcePageUrl: pageUrl });
   }, [onExternalHref, pageUrl, snapshot.document]);
 
   useEffect(() => {
@@ -540,14 +542,7 @@ export function useAnnotationSession({
   }, [clearDocumentSnapshot, iframeUrl]);
 
   const openInAnnotator = useCallback(async (href: string) => {
-    const fragment = sameDocumentFragment(href, pageUrl);
-    if (fragment && activeDocument) {
-      const appUrl = new URL(window.location.href);
-      appUrl.hash = fragment;
-      window.history.pushState(null, '', `${appUrl.pathname}${appUrl.search}${appUrl.hash}`);
-      scrollToFrameFragment(activeDocument, fragment);
-      return;
-    }
+    if (activeDocument && navigateToFrameFragment(activeDocument, href, pageUrl, window)) return;
 
     const normalized = normalizeUrl(href);
     await ensurePage(normalized, '', runtime);

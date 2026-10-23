@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "./design-system/button";
 import { IconButton } from "./design-system/icon-button";
 import { Latex } from "./design-system/latex";
-import { Comment, Edit, Save, Times, Trash } from "../app/icons";
+import { Comment, Edit, Save, Times, Trash } from "./icons";
 import ActionDialog from "./ActionDialog";
 import CommentEditor from "./CommentEditor";
 import EmptyState from "./EmptyState";

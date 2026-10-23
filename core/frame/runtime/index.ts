@@ -3,7 +3,7 @@ import {
   FRAME_SOURCE_BASE_META_NAME,
   resolveExternalLinkHref,
 } from '../externalLinks';
-export { sameDocumentFragment, scrollToFrameFragment } from '../fragments';
+export { navigateToFrameFragment, sameDocumentFragment, scrollToFrameFragment } from '../fragments';
 export { applyFrameDarkMode } from '../darkMode';
 
 const COOKIE_BANNER_SELECTORS = [
@@ -164,7 +164,7 @@ export function startExternalLinkInterceptor(
     ) return;
 
     const target = eventTargetElement(event.target, doc);
-    const anchor = target?.closest<HTMLAnchorElement>('a[href]');
+    const anchor = target?.closest<HTMLAnchorElement | HTMLAreaElement>('a[href], area[href]');
     const href = resolveExternalLinkHref(anchor?.getAttribute('href'), {
       appOrigin,
       sourcePageUrl: options.sourcePageUrl,

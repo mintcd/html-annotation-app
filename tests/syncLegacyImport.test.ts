@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { Miniflare } from "miniflare";
+import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { createIntentHash } from "@mintcd/sync-engine";
 import { createD1RecordMigration, openD1RecordDatabase } from "@mintcd/sync-engine/adapters/d1";
 import { createCrudPolicy } from "@mintcd/sync-engine/records";
@@ -20,11 +20,11 @@ function website(id: string, title: string) {
 }
 
 async function fixture(t: TestContext) {
-  const runtime = new Miniflare({
+  const runtime = new Miniflare(convertV4MiniflareOptions({
     modules: true,
     script: "export default { fetch() { return new Response('ok'); } };",
     d1Databases: ["DB"], compatibilityDate: "2026-07-22", cf: false, host: "127.0.0.1",
-  });
+  }));
   t.after(() => runtime.dispose());
   const database = await runtime.getD1Database("DB");
   await database.exec(createD1RecordMigration({ schema: model.schema, collections, tablePrefix }));
