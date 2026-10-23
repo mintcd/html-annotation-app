@@ -10,7 +10,7 @@
     "dev": "vinext dev --port 5001 --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "build": "vinext build",
-    "deploy": "vinext deploy",
+    "deploy": "npx @vinext/cloudflare deploy",
     "start": "vinext start",
     "lint": "vinext lint",
     "test": "node --test tests/*.test.ts"
